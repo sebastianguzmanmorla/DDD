@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <PackageOutputPath>$(MSBuildThisFileDirectory)../../artifacts/</PackageOutputPath>
+        <PackageId>SebastianGuzmanMorla.DDD.Domain</PackageId>
+        <Version>1.0.0</Version>
+        <Authors>Sebastián Guzmán Morla</Authors>
+        <Description>Biblioteca de dominio que define entidades base, mensajes y atributos para la implementación de Domain-Driven Design (DDD) en .NET 10.0+.</Description>
+        <PackageProjectUrl>https://github.com/sebastianguzmanmorla/DDD</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sebastianguzmanmorla/DDD.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <PackageTags>ddd domain-driven-design domain entities messaging dotnet csharp net10</PackageTags>
+        <Copyright>© 2026 Sebastián Guzmán Morla</Copyright>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\SebastianGuzmanMorla.DDD.Domain.Generator\SebastianGuzmanMorla.DDD.Domain.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\SebastianGuzmanMorla.DDD.Domain.Generator\bin\$(Configuration)\netstandard2.0\SebastianGuzmanMorla.DDD.Domain.Generator.dll"
+              Pack="true"
+              PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+</Project>

@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <PackageOutputPath>$(MSBuildThisFileDirectory)../../artifacts/</PackageOutputPath>
+        <PackageId>SebastianGuzmanMorla.DDD</PackageId>
+        <Version>1.0.0</Version>
+        <Authors>Sebastián Guzmán Morla</Authors>
+        <Description>Biblioteca base para la implementación de Domain-Driven Design (DDD) en .NET 10.0+ con soporte para repositorios EF Core, Unit of Work y Source Generators.</Description>
+        <PackageProjectUrl>https://github.com/sebastianguzmanmorla/DDD</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sebastianguzmanmorla/DDD.git</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <PackageTags>ddd domain-driven-design repository unit-of-work efcore handler cqs source-generator dotnet csharp net10</PackageTags>
+        <Copyright>© 2026 Sebastián Guzmán Morla</Copyright>
+    </PropertyGroup>
+    
+    <ItemGroup>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
+        <None Include="..\..\AGENTS.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+    
+    <Target Name="PrintVersion">
+        <Error Text="$(Version)"/>
+    </Target>
+    
+    <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.16" />
+        <PackageReference Include="FlexLabs.EntityFrameworkCore.Upsert" Version="9.103.0" />
+        <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="9.0.2" />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.2" />
+    </ItemGroup>
+    
+    <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
+        <PackageReference Include="FlexLabs.EntityFrameworkCore.Upsert" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.8" />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
+    </ItemGroup>
+    
+    <ItemGroup>
+        <PackageReference Include="StackExchange.Redis" Version="2.13.1" />
+        <PackageReference Include="SebastianGuzmanMorla.Validator" Version="1.0.2" />
+    </ItemGroup>
+    
+    <ItemGroup>
+        <ProjectReference Include="..\SebastianGuzmanMorla.DDD.Domain\SebastianGuzmanMorla.DDD.Domain.csproj" />
+        <ProjectReference Include="..\SebastianGuzmanMorla.DDD.Generator\SebastianGuzmanMorla.DDD.Generator.csproj" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\SebastianGuzmanMorla.DDD.Generator\bin\$(Configuration)\netstandard2.0\SebastianGuzmanMorla.DDD.Generator.dll"
+              Pack="true"
+              PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+
+</Project>
