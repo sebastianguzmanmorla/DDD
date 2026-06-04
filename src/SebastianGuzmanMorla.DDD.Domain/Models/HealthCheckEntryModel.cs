@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace SebastianGuzmanMorla.DDD.Domain.Messaging;
+namespace SebastianGuzmanMorla.DDD.Domain.Models;
 
 public class HealthCheckEntryModel
 {

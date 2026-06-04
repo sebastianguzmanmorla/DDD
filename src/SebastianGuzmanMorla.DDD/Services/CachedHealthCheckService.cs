@@ -3,21 +3,23 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SebastianGuzmanMorla.DDD.Domain.Messaging;
+using SebastianGuzmanMorla.DDD.Domain.Models;
+using SebastianGuzmanMorla.DDD.Domain.Settings;
 using StackExchange.Redis;
 
 namespace SebastianGuzmanMorla.DDD.Services;
 
-public class CachedHealthCheckService(
+public class CachedHealthCheckService
+(
     HealthCheckService healthCheckService,
     IConnectionMultiplexer redis,
-    IOptions<DddHealthCheckOptions> options,
+    IOptions<CachedHealthCheckOptions> options,
     ILogger<CachedHealthCheckService> logger,
     JsonSerializerOptions? jsonSerializerOptions = null
 ) : BackgroundService
 {
     private readonly IDatabase _db = redis.GetDatabase();
-    private readonly DddHealthCheckOptions _settings = options.Value;
+    private readonly CachedHealthCheckOptions _settings = options.Value;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -57,7 +59,7 @@ public class CachedHealthCheckService(
         }
     }
 
-    private static HealthCheckReportModel FromHealthReport(HealthReport report)
+    public static HealthCheckReportModel FromHealthReport(HealthReport report)
     {
         return new HealthCheckReportModel
         {
