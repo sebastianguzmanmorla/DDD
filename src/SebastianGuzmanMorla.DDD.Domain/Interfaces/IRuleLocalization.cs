@@ -1,6 +1,6 @@
 namespace SebastianGuzmanMorla.DDD.Domain.Interfaces;
 
-public interface IDddLocalization
+public interface IRuleLocalization
 {
     string Minimum(string label, int min);
     string Maximum(string label, int max);
