@@ -56,6 +56,10 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                     compilation.GetTypeByMetadataName("SebastianGuzmanMorla.DDD.Domain.Interfaces.INotificationHandler`1") ??
                     throw new Exception("SebastianGuzmanMorla.DDD.Domain.Interfaces.INotificationHandler`1");
 
+                INamedTypeSymbol requestBinderSymbol =
+                    compilation.GetTypeByMetadataName("SebastianGuzmanMorla.DDD.Interfaces.IRequestBinder`2") ??
+                    throw new Exception("SebastianGuzmanMorla.DDD.Interfaces.IRequestBinder`2");
+
 
                 StringBuilder sourceBuilder = new();
 
@@ -87,6 +91,13 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                     foreach (INamedTypeSymbol typeSymbol in namedTypeSymbol.AllInterfaces)
                     {
                         if (SymbolEqualityComparer.Default.Equals(typeSymbol.OriginalDefinition, requestHandlerSymbol))
+                        {
+                            sourceBuilder.AppendLine(
+                                $"        services.AddScoped(typeof({typeSymbol.ToDisplayString()}), typeof({namedTypeSymbol.ToDisplayString()}));");
+                            continue;
+                        }
+
+                        if (SymbolEqualityComparer.Default.Equals(typeSymbol.OriginalDefinition, requestBinderSymbol))
                         {
                             sourceBuilder.AppendLine(
                                 $"        services.AddScoped(typeof({typeSymbol.ToDisplayString()}), typeof({namedTypeSymbol.ToDisplayString()}));");

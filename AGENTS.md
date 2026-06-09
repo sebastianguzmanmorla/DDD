@@ -218,7 +218,29 @@ if (user.ValidateSecret(password))
 
 ---
 
-## 6. Entity Framework Core Configuration Mapping
+## 6. Rule Localization (`IRuleLocalization`)
+
+For validation message localization in validators, the library provides the `IRuleLocalization` interface under `SebastianGuzmanMorla.DDD.Domain.Interfaces`. This interface standardizes common validation error messages:
+
+- `NotNull(string label)`
+- `NotEmpty(string label)`
+- `Maximum(string label, int max)`
+- `AlreadyExists(string label)`
+- `Immutable(string label)`
+- `MaximumLength(string label, int length)`
+- `MinimumLength(string label, int length)`
+- `NotExists(string label)`
+- `NotValid(string label)`
+
+Example usage inside a validator:
+```csharp
+RuleFor(x => x.Name)
+    .NotNull((x, _) => x.GetRequiredService<IRuleLocalization>().NotNull("Name"));
+```
+
+---
+
+## 7. Entity Framework Core Configuration Mapping
 
 Entity configurations implementing `IEntityTypeConfiguration<TEntity>` are automatically tracked.
 The source generator generates `ModelBuilderGeneratedExtensions` under the `Identity.Infrastructure` namespace. In your DbContext, apply them automatically:
@@ -240,7 +262,7 @@ public class MyDbContext : DbContext
 
 ---
 
-## 7. ASP.NET Core Integration & Features
+## 8. ASP.NET Core Integration & Features
 
 The library contains ASP.NET Core integrations that simplify Web App structure, endpoints, error handling, health checks, and authorization.
 
@@ -249,6 +271,49 @@ Use `MapRequest<TRequest, TResponse>` (from `SebastianGuzmanMorla.DDD.Extensions
 
 - `GET` or `DELETE` requests bind using `[AsParameters] TRequest request`.
 - `POST`, `PUT`, or `PATCH` requests bind using `[FromBody] TRequest request`.
+
+#### Custom Request Binding (`IRequestBinder`)
+If a request requires custom binding logic (e.g. retrieving request values from headers, cookies, query parameters, route data, or multi-part form data), implement `IRequestBinder<TRequest, TErrorResponse>`:
+
+```csharp
+using SebastianGuzmanMorla.DDD.Interfaces;
+using SebastianGuzmanMorla.DDD.Domain.Messaging;
+
+public class CustomRequestBinder(IHttpContextAccessor httpContextAccessor) 
+    : IRequestBinder<MyCustomRequest, Response>
+{
+    public async Task<(MyCustomRequest?, Response?)> BindAsync(CancellationToken cancellationToken = default)
+    {
+        var context = httpContextAccessor.HttpContext;
+        var value = context?.Request.Headers["X-Custom-Header"].ToString();
+        
+        if (string.IsNullOrEmpty(value))
+        {
+            return (null, new Response { Status = HttpStatusCode.BadRequest, Message = "Missing custom header" });
+        }
+        
+        return (new MyCustomRequest { HeaderValue = value }, null);
+    }
+}
+```
+
+The source generator automatically registers `IRequestBinder<TRequest, TErrorResponse>` implementations in the dependency injection container. Then, map it using the three-parameter overload:
+
+```csharp
+group.MapRequest<MyCustomRequest, MyResponse, Response>(
+    RequestMethod.Post,
+    "/prefix",
+    "/route",
+    "CustomTag"
+);
+```
+
+#### File Responses (`ResponseFile`)
+For endpoints that return files, requests should return a `ResponseFile` (such as `ResponseFileByte` or `ResponseFilePath`). `MapRequest` automatically maps these to `Results.File`:
+
+```csharp
+public class GetReportRequest : Request<ResponseFileByte> { ... }
+```
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Extensions;
@@ -284,7 +349,7 @@ To prevent hammering databases and external APIs on every health check poll, con
 
 1. **Configure Options**:
    ```csharp
-   builder.Services.AddOptions<SebastianGuzmanMorla.DDD.Domain.Settings.CachedHealthCheckOptions>()
+   builder.Services.AddOptions<SebastianGuzmanMorla.DDD.Domain.Options.CachedHealthCheckOptions>()
        .Configure(options =>
        {
            options.RedisKey = "AppName:health";
@@ -341,7 +406,7 @@ builder.Services.AddOpenApi(options =>
 
 ---
 
-## 8. Summary of Design Patterns & Conventions
+## 9. Summary of Design Patterns & Conventions
 
 | Target | Convention | Source Generator Effect |
 | :--- | :--- | :--- |
@@ -354,6 +419,7 @@ builder.Services.AddOpenApi(options =>
 | **EF Configurations**| Implement `IEntityTypeConfiguration<T>`. | Hooked via `modelBuilder.ApplyGeneratedConfigurations()`. |
 | **Notifications** | Implement `INotification`, handlers implement `INotificationHandler<T>`. | Registered as singletons automatically. |
 | **Minimal API Routes** | Map using `group.MapRequest<TReq, TRes>(...)`. | None |
+| **Custom Request Binders** | Implement `IRequestBinder<TReq, TErr>`. | Registered via `ConfigureHandlerServices.ConfigureGenerated(services)`. |
 | **Global Exception Middleware** | Add `app.UseMiddleware<ExceptionHandlerMiddleware<TContext>>()`. | None |
 | **Cached Health Checks** | Setup `CachedHealthCheckService` and call `app.MapCachedHealthChecks()`. | None |
 | **Smart Enum Authorization** | Use `new SmartEnumRequirement<TFlags, TEnum, TVal>(value)`. | None |

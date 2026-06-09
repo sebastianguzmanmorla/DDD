@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SebastianGuzmanMorla.DDD.Domain.Models;
-using SebastianGuzmanMorla.DDD.Domain.Settings;
+using SebastianGuzmanMorla.DDD.Domain.Options;
 using StackExchange.Redis;
 
 namespace SebastianGuzmanMorla.DDD.Services;
@@ -39,7 +39,7 @@ public class CachedHealthCheckService
                         HealthCheckReportModel model = FromHealthReport(report);
 
                         string json = jsonSerializerOptions is not null
-                            ? JsonSerializer.Serialize(model, typeof(HealthCheckReportModel), jsonSerializerOptions)
+                            ? JsonSerializer.Serialize(model, jsonSerializerOptions)
                             : JsonSerializer.Serialize(model);
 
                         await _db.StringSetAsync(_settings.RedisKey, json, TimeSpan.FromMinutes(2));

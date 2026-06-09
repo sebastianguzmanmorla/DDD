@@ -16,7 +16,7 @@ Una biblioteca base para implementar **Domain-Driven Design (DDD)** en .NET 10.0
   - Soporte para notificaciones (`INotification`, `INotificationHandler`) y acciones post-commit.
 - **Generadores de Código de Roslyn**:
   - **`ConfigureRepositoryServicesGenerator`**: Registra de forma automática en el contenedor de DI todos los repositorios que implementen `IRepository<TEntity>`.
-  - **`ConfigureHandlerServicesGenerator`**: Registra automáticamente los manejadores de solicitudes (`IRequestHandler<TRequest, TResponse>`) y eventos (`INotificationHandler<TNotification>`).
+  - **`ConfigureHandlerServicesGenerator`**: Registra automáticamente los manejadores de solicitudes (`IRequestHandler<TRequest, TResponse>`), eventos (`INotificationHandler<TNotification>`) y vinculadores de solicitudes (`IRequestBinder<TRequest, TErrorResponse>`).
   - **`ClearSensitivePropertiesGenerator`**: Genera automáticamente la implementación para limpiar datos sensibles (marcados con `[SensitiveData]`) de los objetos `Request` mediante el método `ClearSensitiveProperties()`.
   - **`EntityTypeConfigurationGenerator`**: Genera de forma automática métodos de extensión para aplicar todas las configuraciones de EF Core (`IEntityTypeConfiguration<T>`) al `ModelBuilder`.
 
@@ -237,12 +237,75 @@ if (user is null || !user.ValidateSecret(password))
 }
 ```
 
-### 5. Integración con ASP.NET Core
+### 5. Localización de Reglas de Validación (`IRuleLocalization`)
+
+Para la localización de mensajes de error de validación, la biblioteca proporciona la interfaz `IRuleLocalization` dentro de `SebastianGuzmanMorla.DDD.Domain.Interfaces`. Esta interfaz estandariza los mensajes de error comunes:
+
+- `NotNull(string label)`
+- `NotEmpty(string label)`
+- `Maximum(string label, int max)`
+- `AlreadyExists(string label)`
+- `Immutable(string label)`
+- `MaximumLength(string label, int length)`
+- `MinimumLength(string label, int length)`
+- `NotExists(string label)`
+- `NotValid(string label)`
+
+Ejemplo de uso en un validador:
+```csharp
+RuleFor(x => x.Name)
+    .NotNull((x, _) => x.GetRequiredService<IRuleLocalization>().NotNull("Nombre"));
+```
+
+### 6. Integración con ASP.NET Core
 
 La biblioteca incluye soporte integrado para simplificar el desarrollo de aplicaciones web ASP.NET Core:
 
 #### A. Mapeo Automático de Enrutamientos Minimal API (`MapRequest`)
 Permite mapear solicitudes (Requests) directamente a Minimal API endpoints utilizando el enfoque CQS sin necesidad de controladores redundantes. Soporta métodos HTTP (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`) y maneja la deserialización correcta según el verbo (e.g. `[AsParameters]` para GET/DELETE y `[FromBody]` para otros).
+
+##### Vinculación Personalizada de Peticiones (`IRequestBinder`)
+Cuando un request requiere lógica de vinculación específica (por ejemplo, extraer valores de cabeceras personalizadas, cookies o multipart form data), se puede implementar la interfaz `IRequestBinder<TRequest, TErrorResponse>`:
+
+```csharp
+using SebastianGuzmanMorla.DDD.Interfaces;
+using SebastianGuzmanMorla.DDD.Domain.Messaging;
+
+public class CustomRequestBinder(IHttpContextAccessor httpContextAccessor) 
+    : IRequestBinder<MyCustomRequest, Response>
+{
+    public async Task<(MyCustomRequest?, Response?)> BindAsync(CancellationToken cancellationToken = default)
+    {
+        var context = httpContextAccessor.HttpContext;
+        var value = context?.Request.Headers["X-Custom-Header"].ToString();
+        
+        if (string.IsNullOrEmpty(value))
+        {
+            return (null, new Response { Status = HttpStatusCode.BadRequest, Message = "Missing custom header" });
+        }
+        
+        return (new MyCustomRequest { HeaderValue = value }, null);
+    }
+}
+```
+
+Esta implementación es detectada y registrada automáticamente por el generador de código de dependencias. Para usarla, se utiliza la sobrecarga de `MapRequest` de tres parámetros genéricos:
+
+```csharp
+group.MapRequest<MyCustomRequest, MyResponse, Response>(
+    RequestMethod.Post,
+    "/prefix",
+    "/route",
+    "CustomTag"
+);
+```
+
+##### Respuestas de Archivos (`ResponseFile`)
+Si un endpoint retorna un archivo, el Request correspondiente debe retornar un subtipo de `ResponseFile` (`ResponseFileByte` o `ResponseFilePath`). `MapRequest` gestionará automáticamente la respuesta como un archivo binario mediante `Results.File`:
+
+```csharp
+public class GetReportRequest : Request<ResponseFileByte> { ... }
+```
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Extensions;
@@ -278,7 +341,7 @@ Optimiza el monitoreo de salud del sistema ejecutando las pruebas de forma asín
 
 1. Configura las opciones en el contenedor de servicios:
 ```csharp
-builder.Services.AddOptions<SebastianGuzmanMorla.DDD.Domain.Settings.CachedHealthCheckOptions>()
+builder.Services.AddOptions<SebastianGuzmanMorla.DDD.Domain.Options.CachedHealthCheckOptions>()
     .Configure(options =>
     {
         options.RedisKey = "MyProject:health";

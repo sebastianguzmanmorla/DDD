@@ -11,21 +11,15 @@ public sealed class SmartEnumRequirement<TSmartEnumFlags, TSmartEnum, TValue>(TS
     public TSmartEnum Value { get; } = value;
 }
 
-public sealed class SmartEnumRequirementHandler<TSmartEnumFlags, TSmartEnum, TValue> : AuthorizationHandler<SmartEnumRequirement<TSmartEnumFlags, TSmartEnum, TValue>>
+public sealed class SmartEnumRequirementHandler<TSmartEnumFlags, TSmartEnum, TValue>(string claimType = "scope")
+    : AuthorizationHandler<SmartEnumRequirement<TSmartEnumFlags, TSmartEnum, TValue>>
     where TSmartEnumFlags : SmartEnumFlags<TSmartEnumFlags, TSmartEnum, TValue>, new()
     where TSmartEnum : SmartEnum<TSmartEnum, TValue>
     where TValue : IEquatable<TValue>
 {
-    private readonly string _claimType;
-
-    public SmartEnumRequirementHandler(string claimType = "scope")
-    {
-        _claimType = claimType;
-    }
-
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, SmartEnumRequirement<TSmartEnumFlags, TSmartEnum, TValue> requirement)
     {
-        string? claimValue = context.User.FindFirst(_claimType)?.Value;
+        string? claimValue = context.User.FindFirst(claimType)?.Value;
 
         TSmartEnumFlags flags = SmartEnumFlags<TSmartEnumFlags, TSmartEnum, TValue>.Parse(claimValue);
 

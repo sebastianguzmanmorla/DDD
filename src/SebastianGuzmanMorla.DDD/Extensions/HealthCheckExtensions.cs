@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using SebastianGuzmanMorla.DDD.Domain.Models;
-using SebastianGuzmanMorla.DDD.Domain.Settings;
+using SebastianGuzmanMorla.DDD.Domain.Options;
 using SebastianGuzmanMorla.DDD.Services;
 using StackExchange.Redis;
 
@@ -48,7 +48,7 @@ public static class HealthCheckExtensions
 
                         JsonSerializerOptions? jsonOptions = context.RequestServices.GetService<JsonSerializerOptions>();
                         json = jsonOptions is not null
-                            ? JsonSerializer.Serialize(model, typeof(HealthCheckReportModel), jsonOptions)
+                            ? JsonSerializer.Serialize(model, jsonOptions)
                             : JsonSerializer.Serialize(model);
                     }
                     catch (Exception)

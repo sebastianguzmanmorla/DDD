@@ -1,4 +1,4 @@
-namespace SebastianGuzmanMorla.DDD.Domain.Settings;
+namespace SebastianGuzmanMorla.DDD.Domain.Options;
 
 public class CachedHealthCheckOptions
 {
