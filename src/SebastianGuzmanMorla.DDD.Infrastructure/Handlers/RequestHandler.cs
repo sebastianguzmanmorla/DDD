@@ -6,7 +6,7 @@ using SebastianGuzmanMorla.DDD.Domain.Messaging;
 using SebastianGuzmanMorla.Validator;
 using SebastianGuzmanMorla.Validator.Interfaces;
 
-namespace SebastianGuzmanMorla.DDD.Handlers;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Handlers;
 
 public abstract class RequestHandler<TContext, TRequest, TResponse>(
     IServiceProvider serviceProvider

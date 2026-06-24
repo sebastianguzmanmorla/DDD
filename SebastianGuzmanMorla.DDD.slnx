@@ -9,4 +9,5 @@
   <Project Path="src\SebastianGuzmanMorla.DDD.Domain.Generator\SebastianGuzmanMorla.DDD.Domain.Generator.csproj" />
   <Project Path="src\SebastianGuzmanMorla.DDD.Domain\SebastianGuzmanMorla.DDD.Domain.csproj" />
   <Project Path="src\SebastianGuzmanMorla.DDD\SebastianGuzmanMorla.DDD.csproj" />
+  <Project Path="src\SebastianGuzmanMorla.DDD.Infrastructure\SebastianGuzmanMorla.DDD.Infrastructure.csproj" />
 </Solution>

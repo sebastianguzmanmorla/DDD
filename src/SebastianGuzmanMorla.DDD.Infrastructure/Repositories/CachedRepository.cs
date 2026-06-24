@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SebastianGuzmanMorla.DDD.Domain.Entities;
 using StackExchange.Redis;
 
-namespace SebastianGuzmanMorla.DDD.Repositories;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
 
 public abstract class CachedRepository<TContext, TEntity>(
     IServiceProvider serviceProvider

@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SebastianGuzmanMorla.DDD.Domain.Entities;
 
-namespace SebastianGuzmanMorla.DDD.Mappings;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Mappings;
 
 public class LogRequestMap : IEntityTypeConfiguration<LogRequest>
 {

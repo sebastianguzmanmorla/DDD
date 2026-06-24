@@ -1,42 +1,61 @@
 # SebastianGuzmanMorla.DDD
 
-Una biblioteca base para implementar **Domain-Driven Design (DDD)** en .NET 10.0+ que integra patrones de Repositorio, Unit of Work, mensajería de Request/Response, y un conjunto de **Source Generators** de Roslyn para automatizar la configuración de dependencias de Entity Framework Core, Handlers y seguridad de datos sensibles.
+A base library for implementing **Domain-Driven Design (DDD)** in .NET 10.0+ that integrates the Repository pattern, Unit of Work, CQS Request/Response messaging, and a set of Roslyn **Source Generators** to automate Dependency Injection registration for repositories, handlers, entity configurations, and data scrubbing.
 
-## Características
+## Features
 
-- **Entidad Base Robusta**: Clase abstracta `Entity` con identificadores únicos `Guid` auto-generados con **UUID v7** (`Guid.CreateVersion7()`), control de auditoría temporal (`CreatedAt`, `UpdatedAt`) y soporte nativo para Eliminación Lógica (`DeletedAt` / Soft Delete).
-- **Patrón Repository & Unit of Work**:
-  - Implementación genérica y extensible sobre **Entity Framework Core**.
-  - Soporte de transacciones y guardado automático o controlado (`UnitOfWork`).
-  - Operaciones avanzadas como `Upsert`, `SoftDelete` y `HardDelete`.
-  - Caché de repositorios mediante decoradores (`CachedRepository`).
-- **Arquitectura de Mensajería (CQS)**:
-  - Estructura base para solicitudes y respuestas: `Request<TResponse>` y `Response<TData>`.
-  - Clases base de procesamiento `RequestHandler` y `RequestPageHandler` integradas con el motor de validación `SebastianGuzmanMorla.Validator`.
-  - Soporte para notificaciones (`INotification`, `INotificationHandler`) y acciones post-commit.
-- **Generadores de Código de Roslyn**:
-  - **`ConfigureRepositoryServicesGenerator`**: Registra de forma automática en el contenedor de DI todos los repositorios que implementen `IRepository<TEntity>`.
-  - **`ConfigureHandlerServicesGenerator`**: Registra automáticamente los manejadores de solicitudes (`IRequestHandler<TRequest, TResponse>`), eventos (`INotificationHandler<TNotification>`) y vinculadores de solicitudes (`IRequestBinder<TRequest, TErrorResponse>`).
-  - **`ClearSensitivePropertiesGenerator`**: Genera automáticamente la implementación para limpiar datos sensibles (marcados con `[SensitiveData]`) de los objetos `Request` mediante el método `ClearSensitiveProperties()`.
-  - **`EntityTypeConfigurationGenerator`**: Genera de forma automática métodos de extensión para aplicar todas las configuraciones de EF Core (`IEntityTypeConfiguration<T>`) al `ModelBuilder`.
+- **Robust Base Entity**: `Entity` abstract class featuring auto-generated **UUID v7** identifiers (`Guid.CreateVersion7()`), temporal audit tracking (`CreatedAt`, `UpdatedAt`), and native Soft Delete support (`DeletedAt`).
+- **Repository & Unit of Work Patterns**:
+  - Generic, extensible implementation on top of **Entity Framework Core**.
+  - Transactional support and automatic or controlled saving (`UnitOfWork`).
+  - Advanced operations including `Upsert` (bulk-optimized), `SoftDelete`, and `HardDelete`.
+  - Automatic cache decoration via Redis (`CachedRepository`).
+- **CQS Messaging Architecture**:
+  - Standard request and response structures: `Request<TResponse>` and `Response<TData>`.
+  - Processing base classes `RequestHandler` and `RequestPageHandler` integrated with the validation engine `SebastianGuzmanMorla.Validator`.
+  - Integration for domain notifications (`INotification`, `INotificationHandler`) and post-commit hook execution.
+- **Roslyn Source Generators**:
+  - **`ConfigureRepositoryServicesGenerator`**: Automatically registers all repositories implementing `IRepository<TEntity>` into the DI container.
+  - **`ConfigureHandlerServicesGenerator`**: Automatically registers all request handlers (`IRequestHandler<TRequest, TResponse>`), notification handlers (`INotificationHandler<TNotification>`), and custom request binders (`IRequestBinder<TRequest, TErrorResponse>`).
+  - **`ClearSensitivePropertiesGenerator`**: Generates implementation to automatically scrub properties marked with `[SensitiveData]` from `Request` objects using `ClearSensitiveProperties()`.
+  - **`EntityTypeConfigurationGenerator`**: Generates extension methods to automatically apply all `IEntityTypeConfiguration<T>` implementations to the EF Core `ModelBuilder`.
 
 ---
 
-## Instalación
+The library is split into three NuGet packages according to responsibilities and dependencies:
 
-Agrega las referencias de proyecto o instala el paquete NuGet (cuando esté publicado):
+1. **`SebastianGuzmanMorla.DDD.Domain`**: Contains core domain entities (`Entity`), base messaging contracts (`Request`, `Response`), abstract interfaces (`IRepository`, `IUnitOfWork`), and core attributes. It is fully independent of ASP.NET Core and external databases.
+2. **`SebastianGuzmanMorla.DDD`**: Web and API integration components for ASP.NET Core (e.g. Minimal API `MapRequest` mapping, OpenAPI transformers, Smart Enum authorization requirements). No database or Redis dependencies.
+3. **`SebastianGuzmanMorla.DDD.Infrastructure`**: Persistence layer implementing EF Core repositories, Redis cached repositories (`CachedRepository`), transactional Unit of Work, exception middleware, and cached health check background services.
 
+---
+
+## Installation
+
+Add the corresponding NuGet package to your project layer:
+
+For the Contract/Domain layer (clean domain models and interfaces):
 ```bash
-dotnet add package SebastianGuzmanMorla.DDD
+dotnet add package SebastianGuzmanMorla.DDD.Domain --version 1.0.3
+```
+
+For the Application/Web API layer (requires Minimal API, OpenAPI, or endpoint mappings):
+```bash
+dotnet add package SebastianGuzmanMorla.DDD --version 1.0.3
+```
+
+For the Infrastructure/Persistence layer (requires EF Core, Redis, generic repositories, or transactional handlers):
+```bash
+dotnet add package SebastianGuzmanMorla.DDD.Infrastructure --version 1.0.3
 ```
 
 ---
 
-## Uso y Componentes
+## Usage and Components
 
-### 1. Entidades y Auditoría
+### 1. Entities and Auditing
 
-Define tus entidades heredando de `Entity`. La propiedad `Id` se inicializa automáticamente con **UUID v7**, idóneo para ordenación temporal y rendimiento en bases de datos:
+Define your entities by inheriting from the `Entity` base class. The `Id` property is automatically initialized using **UUID v7** (via `Guid.CreateVersion7()`), which ensures proper temporal database ordering and excellent index performance:
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Domain.Entities;
@@ -48,9 +67,9 @@ public class Product : Entity
 }
 ```
 
-### 2. Repositorios y Unit of Work
+### 2. Repositories and Unit of Work
 
-Define la interfaz de tu repositorio heredando de `IRepository<TEntity>`:
+Define your repository interface by inheriting from `IRepository<TEntity>`:
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Domain.Interfaces;
@@ -61,24 +80,32 @@ public interface IProductRepository : IRepository<Product>
 }
 ```
 
-Implementa el repositorio heredando de `Repository<TContext, TEntity>`:
+Implement the repository by inheriting from `Repository<TContext, TEntity>`:
 
 ```csharp
-using SebastianGuzmanMorla.DDD.Repositories;
+using SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
 
 public class ProductRepository(IServiceProvider serviceProvider) 
     : Repository<MyDbContext, Product>(serviceProvider), IProductRepository
+{
+    public async Task<List<Product>> GetExpensiveProducts(decimal minPrice)
+    {
+        return await Queryable
+            .Where(p => p.Price >= minPrice)
+            .ToListAsync();
+    }
+}
 ```
 
-#### Caché en Repositorio (`CachedRepository`)
-Si necesitas habilitar almacenamiento en caché automático sobre Redis para tus entidades, hereda tu clase de repositorio de `CachedRepository<TContext, TEntity>` en lugar de `Repository`:
+#### Redis Cached Repository (`CachedRepository`)
+To enable automatic caching on Redis for your entity repository, inherit from `CachedRepository<TContext, TEntity>` instead of `Repository`:
 
-- Utiliza internamente `IConnectionMultiplexer` de Redis para leer/guardar los valores de forma automática.
-- Invalida la caché de forma automática en operaciones de escritura (`Update`, `Upsert`, `SoftDelete`, `HardDelete`) registrando acciones post-commit en el `UnitOfWork`.
-- Requiere especificar un prefijo de clave (`CacheKeyPrefix`), el tiempo de expiración opcional (`CacheExpiry`) y la información de metadatos de tipos para la serialización JSON (`JsonTypeInfo`).
+- Automatically queries Redis before falling back to the database.
+- Registers post-commit actions to invalidate or refresh cache entries during write operations (`Update`, `Upsert`, `SoftDelete`, `HardDelete`).
+- Requires defining the key prefix (`CacheKeyPrefix`), cache expiration (`CacheExpiry`), and System.Text.Json metadata context (`JsonTypeInfo`):
 
 ```csharp
-using SebastianGuzmanMorla.DDD.Repositories;
+using SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
 using System.Text.Json.Serialization.Metadata;
 
 public class ProductRepository(IServiceProvider serviceProvider) 
@@ -88,13 +115,20 @@ public class ProductRepository(IServiceProvider serviceProvider)
     
     protected override TimeSpan CacheExpiry => TimeSpan.FromMinutes(15);
     
-    // Provee los metadatos de serialización para System.Text.Json
+    // Provide compilation metadata for System.Text.Json source generation
     protected override JsonTypeInfo<Product> JsonTypeInfo => MyJsonSerializerContext.Default.Product;
+
+    public async Task<List<Product>> GetExpensiveProducts(decimal minPrice)
+    {
+        return await Queryable
+            .Where(p => p.Price >= minPrice)
+            .ToListAsync();
+    }
 }
 ```
 
-#### Registro Automático de Repositorios
-Gracias al Source Generator de repositorios, solo debes declarar la siguiente clase parcial en tu capa de infraestructura:
+#### Automatic Repository Registration
+Declare the following partial class in your infrastructure layer, and the Roslyn Source Generator will output the registration logic for all repositories implementing `IRepository<TEntity>`:
 
 ```csharp
 namespace MyProject.Infrastructure;
@@ -103,16 +137,16 @@ public static partial class ConfigureRepositoryServices
 {
     public static IServiceCollection ConfigureInfrastructure(this IServiceCollection services)
     {
-        // Este método parcial autogenerado se encarga de registrar todos los repositorios
+        // This generated method automatically registers all repositories
         ConfigureGenerated(services);
         return services;
     }
 }
 ```
 
-### 3. Solicitudes, Respuestas y Manejadores (CQS)
+### 3. Messaging (Requests, Responses, and Handlers)
 
-Define tu Request y Response heredando de las clases base:
+Define your CQS Request and Response structures by inheriting from the base classes:
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Domain.Messaging;
@@ -124,7 +158,7 @@ public class CreateProductRequest : Request<CreateProductResponse>
 
     public override void ClearSensitiveProperties()
     {
-        // Implementación generada automáticamente si usas partial y attributes
+        // Automatically implemented if the class is partial and contains [SensitiveData]
     }
 }
 
@@ -134,8 +168,8 @@ public class CreateProductResponse : Response
 }
 ```
 
-#### Exclusión de Auditoría (`[LogIgnore]`)
-Si deseas que una solicitud no genere logs de auditoría automáticos en tu infraestructura, decora el request con el atributo `[LogIgnore]`:
+#### Auditing Exclusions (`[LogIgnore]`)
+To prevent specific requests (e.g. high-frequency heartbeat ping calls) from producing audit logs in the database, annotate the request with the `[LogIgnore]` attribute:
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Domain.Attributes;
@@ -143,14 +177,14 @@ using SebastianGuzmanMorla.DDD.Domain.Attributes;
 [LogIgnore]
 public class SilentRequest : Request<Response>
 {
-    // ...
+    // No audit log generated
 }
 ```
 
-Escribe el Handler heredando de `RequestHandler<TContext, TRequest, TResponse>`:
+Implement the Handler by inheriting from `RequestHandler<TContext, TRequest, TResponse>`:
 
 ```csharp
-using SebastianGuzmanMorla.DDD.Handlers;
+using SebastianGuzmanMorla.DDD.Infrastructure.Handlers;
 
 public class CreateProductHandler(IServiceProvider serviceProvider) 
     : RequestHandler<MyDbContext, CreateProductRequest, CreateProductResponse>(serviceProvider)
@@ -160,6 +194,7 @@ public class CreateProductHandler(IServiceProvider serviceProvider)
         CancellationToken cancellationToken = default)
     {
         var product = new Product { Name = request.Name, Price = request.Price };
+        
         await ServiceProvider.GetRequiredService<IProductRepository>().Add(cancellationToken, product);
         
         return new CreateProductResponse { ProductId = product.Id };
@@ -167,8 +202,8 @@ public class CreateProductHandler(IServiceProvider serviceProvider)
 }
 ```
 
-#### Registro Automático de Handlers
-Para registrar automáticamente todos tus manejadores (`IRequestHandler` y `INotificationHandler`), define la siguiente clase parcial:
+#### Automatic Handler Registration
+To automatically wire up all request handlers (`IRequestHandler<,>`) and notification handlers (`INotificationHandler<>`), declare the partial class:
 
 ```csharp
 namespace MyProject.Application;
@@ -177,24 +212,22 @@ public static partial class ConfigureHandlerServices
 {
     public static IServiceCollection ConfigureApplication(this IServiceCollection services)
     {
-        // Generado automáticamente en compilación
+        // Automatically populated at compilation
         ConfigureGenerated(services);
         return services;
     }
 }
 ```
 
-### 4. Seguridad y Hashing de Contraseñas (ISecretHash)
+### 4. Security & Hashing (`ISecretHash` and `SecretHasher`)
 
-La biblioteca proporciona abstracciones y utilidades para manejar de forma segura el hashing de secretos y contraseñas (por ejemplo, en el login/registro de usuarios):
+The library includes built-in structures to handle password/credential hashing using PBKDF2 with SHA-256:
 
-- **`ISecretHash`**: Interfaz para entidades que contienen una contraseña cifrada.
-- **`SecretHasher`**: Clase de utilidad estática que utiliza **Pbkdf2** con SHA256 para el hashing y verificación seguros.
-- **`SecretHashExtensions`**: Métodos de extensión como `ValidateSecret` para facilitar la verificación del secreto.
+- **`ISecretHash`**: Implement this interface on domain models storing credentials.
+- **`SecretHasher`**: Helper class to hash and verify plain-text values.
+- **`SecretHashExtensions`**: Extends `ISecretHash` with verification utilities like `ValidateSecret`.
 
-#### Implementación de la Entidad
-Define tu entidad heredando de `Entity` e implementando `ISecretHash`:
-
+#### Implementing the Entity:
 ```csharp
 using SebastianGuzmanMorla.DDD.Domain.Entities;
 using SebastianGuzmanMorla.DDD.Domain.Interfaces;
@@ -207,65 +240,65 @@ public class User : Entity, ISecretHash
 }
 ```
 
-#### Hashing en el Registro
-Al crear un usuario, genera el hash de la contraseña utilizando `SecretHasher.Hash`:
-
+#### Hashing credentials:
 ```csharp
 using SebastianGuzmanMorla.DDD;
 
 var user = new User
 {
-    Name = Name,
-    Email = Email,
-    SecretHash = SecretHasher.Hash(Password)
+    Name = name,
+    Email = email,
+    SecretHash = SecretHasher.Hash(plainTextPassword)
 };
 
 await userRepository.Add(cancellationToken, user);
 ```
 
-#### Verificación en el Login
-Para validar las credenciales de un usuario, utiliza el método de extensión `ValidateSecret`:
-
+#### Verifying credentials:
 ```csharp
 using SebastianGuzmanMorla.DDD.Extensions;
 
 User? user = await userRepository.FirstOrDefault(email, cancellationToken);
 
-if (user is null || !user.ValidateSecret(password))
+if (user is null || !user.ValidateSecret(plainTextPassword))
 {
-    // Credenciales inválidas
+    // Invalid credentials
 }
 ```
 
-### 5. Localización de Reglas de Validación (`IRuleLocalization`)
+### 5. Validation Messages Localization (`IRuleLocalization`)
 
-Para la localización de mensajes de error de validación, la biblioteca proporciona la interfaz `IRuleLocalization` dentro de `SebastianGuzmanMorla.DDD.Domain.Interfaces`. Esta interfaz estandariza los mensajes de error comunes:
+Standardize validation messages within your validators using `IRuleLocalization` (found in `SebastianGuzmanMorla.DDD.Domain.Interfaces`):
 
-- `NotNull(string label)`
-- `NotEmpty(string label)`
-- `Maximum(string label, int max)`
-- `AlreadyExists(string label)`
-- `Immutable(string label)`
-- `MaximumLength(string label, int length)`
-- `MinimumLength(string label, int length)`
-- `NotExists(string label)`
-- `NotValid(string label)`
+- Common error message definitions: `NotNull`, `NotEmpty`, `Maximum`, `AlreadyExists`, `Immutable`, `MaximumLength`, `MinimumLength`, `NotExists`, `NotValid`.
 
-Ejemplo de uso en un validador:
+Usage inside a Fluent Validation rule:
 ```csharp
 RuleFor(x => x.Name)
-    .NotNull((x, _) => x.GetRequiredService<IRuleLocalization>().NotNull("Nombre"));
+    .NotNull((x, _) => x.GetRequiredService<IRuleLocalization>().NotNull("Name"));
 ```
 
-### 6. Integración con ASP.NET Core
+### 6. ASP.NET Core Integrations
 
-La biblioteca incluye soporte integrado para simplificar el desarrollo de aplicaciones web ASP.NET Core:
+#### A. Minimal API Routing mapping (`MapRequest`)
+Map requests straight to Minimal API endpoints without controllers. It automatically manages binding according to the HTTP verb (`[AsParameters]` for GET/DELETE, `[FromBody]` for POST/PUT/PATCH):
 
-#### A. Mapeo Automático de Enrutamientos Minimal API (`MapRequest`)
-Permite mapear solicitudes (Requests) directamente a Minimal API endpoints utilizando el enfoque CQS sin necesidad de controladores redundantes. Soporta métodos HTTP (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`) y maneja la deserialización correcta según el verbo (e.g. `[AsParameters]` para GET/DELETE y `[FromBody]` para otros).
+```csharp
+using SebastianGuzmanMorla.DDD.Extensions;
 
-##### Vinculación Personalizada de Peticiones (`IRequestBinder`)
-Cuando un request requiere lógica de vinculación específica (por ejemplo, extraer valores de cabeceras personalizadas, cookies o multipart form data), se puede implementar la interfaz `IRequestBinder<TRequest, TErrorResponse>`:
+public static void MapEndpoints(this RouteGroupBuilder group)
+{
+    // Maps the route and executes its handler via DI
+    group.MapRequest<CreateProductRequest, CreateProductResponse>(
+        CreateProductRequest.Method, 
+        CreateProductRequest.Route, 
+        "ProductsTag"
+    );
+}
+```
+
+##### Custom Request Binding (`IRequestBinder`)
+For requests requiring customized binding logic (e.g. reading from headers, cookies, query keys, or form data), implement `IRequestBinder<TRequest, TErrorResponse>`:
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Interfaces;
@@ -289,7 +322,7 @@ public class CustomRequestBinder(IHttpContextAccessor httpContextAccessor)
 }
 ```
 
-Esta implementación es detectada y registrada automáticamente por el generador de código de dependencias. Para usarla, se utiliza la sobrecarga de `MapRequest` de tres parámetros genéricos:
+The binding class is automatically registered by the source generator. Map it using the 3-parameter overload:
 
 ```csharp
 group.MapRequest<MyCustomRequest, MyResponse, Response>(
@@ -300,73 +333,56 @@ group.MapRequest<MyCustomRequest, MyResponse, Response>(
 );
 ```
 
-##### Respuestas de Archivos (`ResponseFile`)
-Si un endpoint retorna un archivo, el Request correspondiente debe retornar un subtipo de `ResponseFile` (`ResponseFileByte` o `ResponseFilePath`). `MapRequest` gestionará automáticamente la respuesta como un archivo binario mediante `Results.File`:
+##### File Responses (`ResponseFile`)
+Endpoints returning files should declare their request output as `ResponseFileByte` or `ResponseFilePath`. `MapRequest` will automatically handle binary responses via `Results.File`.
+
+#### B. Global Exception Handler (`ExceptionHandlerMiddleware`)
+A global exception middleware capturing runtime failures and generating appropriate HTTP statuses:
+
+- Captures database transaction issues or general exceptions (returns 500 Internal Server Error) and records an EF Core `Log` entity, outputting a JSON body with a unique `LogId` trace identifier.
+- Captures `BadHttpRequestException` (returns 400 Bad Request).
+- Captures `TaskCanceledException` (returns 499 Client Closed Request).
 
 ```csharp
-public class GetReportRequest : Request<ResponseFileByte> { ... }
-```
+using SebastianGuzmanMorla.DDD.Infrastructure.Middleware;
 
-```csharp
-using SebastianGuzmanMorla.DDD.Extensions;
-
-// En tu mapeador de Endpoints
-public static void MapEndpoints(this RouteGroupBuilder group)
-{
-    // Mapea automáticamente el Request al Handler correspondiente y devuelve el Response formateado
-    group.MapRequest<CreateProductRequest, CreateProductResponse>(
-        CreateProductRequest.Method, 
-        CreateProductRequest.Route, 
-        "ProductsTag"
-    );
-}
-```
-
-#### B. Manejo Global de Excepciones (`ExceptionHandlerMiddleware`)
-Un middleware global que captura excepciones, gestiona cancelaciones de peticiones (`TaskCanceledException`), y guarda los logs de errores generales en base de datos.
-
-- Captura excepciones generales, las registra en la tabla `Log` de Entity Framework y devuelve un error 500 con un JSON estructurado que incluye el identificador único del log registrado (`LogId`) para facilitar su rastreo.
-- Captura `BadHttpRequestException` y devuelve un código 400.
-- Captura `TaskCanceledException` y devuelve un código 499 (Client Closed Request).
-
-```csharp
-using SebastianGuzmanMorla.DDD.Middleware;
-
-// En tu Program.cs
+// Register in Program.cs
 app.UseMiddleware<ExceptionHandlerMiddleware<MyDbContext>>();
 ```
 
-#### C. Health Checks en Caché con Redis (`MapCachedHealthChecks`)
-Optimiza el monitoreo de salud del sistema ejecutando las pruebas de forma asíncrona mediante un servicio en segundo plano (`BackgroundService`) y guardando el reporte en caché en Redis, evitando sobrecargar las bases de datos u otros servicios externos con peticiones concurrentes al endpoint de `/health`.
+#### C. Redis-Cached Health Checks (`MapCachedHealthChecks`)
+Optimizes system health checks by executing checks in a background hosted service and storing the results in Redis, preventing database spikes under intensive health checks:
 
-1. Configura las opciones en el contenedor de servicios:
+1. Configure settings in DI:
 ```csharp
 builder.Services.AddOptions<SebastianGuzmanMorla.DDD.Domain.Options.CachedHealthCheckOptions>()
     .Configure(options =>
     {
         options.RedisKey = "MyProject:health";
         options.RedisLockKey = "MyProject:locks:health";
-        options.CacheIntervalSeconds = 30; // Tiempo entre verificaciones
+        options.CacheIntervalSeconds = 30; // Scan interval
     });
 ```
-2. Registra el servicio en segundo plano:
+
+2. Register the service and endpoint:
 ```csharp
+using SebastianGuzmanMorla.DDD.Infrastructure.Extensions;
+using SebastianGuzmanMorla.DDD.Infrastructure.Services;
+
 builder.Services.AddSingleton<CachedHealthCheckService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CachedHealthCheckService>());
-```
-3. Mapea la ruta de health check:
-```csharp
-app.MapCachedHealthChecks("/health"); // Opcional especificar ruta, por defecto /health
+
+app.MapCachedHealthChecks("/health"); // Maps check endpoint (defaults to /health)
 ```
 
-#### D. Autorización basada en Smart Enums (`SmartEnumRequirement`)
-Permite validar permisos o alcances (scopes) de usuarios mediante políticas de autorización que verifican Flags utilizando la librería `SebastianGuzmanMorla.SmartEnum`.
+#### D. Smart Enum Authorization (`SmartEnumRequirement`)
+Enforces claim and scope check policies using Smart Enums flags:
 
-1. Registra el manejador de requerimientos en DI:
+1. Add the policy handler:
 ```csharp
 builder.Services.AddSingleton<IAuthorizationHandler, SmartEnumRequirementHandler<MyScopes, MyScope, string>>();
 ```
-2. Configura tu política de autorización:
+2. Define authorization policies:
 ```csharp
 builder.Services.AddAuthorization(options =>
 {
@@ -379,31 +395,28 @@ builder.Services.AddAuthorization(options =>
 });
 ```
 
-#### E. Soporte para Documentación de OpenAPI/Swagger con Smart Enums (`ParametersTransformer`)
-Un transformador de operaciones de OpenAPI (`IOpenApiOperationTransformer`) que permite documentar de forma automática los parámetros y propiedades de las solicitudes (especialmente en Minimal APIs), resolviendo los esquemas correctos para tipos como `Guid` y soportando de forma nativa los tipos de `SmartEnum` y `SmartEnumFlags`.
+#### E. OpenAPI/Swagger Document Transformers (`ParametersTransformer`)
+Enables automatic OpenAPI parameter documentation for requests (especially Minimal APIs), parsing `Guid` types correctly and detailing `SmartEnum` or `SmartEnumFlags` properties.
 
-- Permite que las herramientas de documentación (como Scalar o Swagger) muestren automáticamente los valores permitidos y patrones de validación de los SmartEnums.
-- Se configura agregando el transformador de operación en las opciones de OpenAPI en tu `Program.cs` o configuración de endpoints:
+Configure by adding the transformer during Swagger/OpenAPI setup in `Program.cs`:
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Transformers;
 
 builder.Services.AddOpenApi(options =>
 {
-    // Registra el transformador para las rutas correspondientes
     options.AddOperationTransformer(
         new ParametersTransformer<GetProductsRequest>(GetProductsRequest.Route, GetProductsRequest.Method)
     );
 });
 ```
 
-
 ---
 
-## Source Generators Incluidos
+## Source Generators Details
 
-### 1. Limpieza de Datos Sensibles (`ClearSensitiveProperties`)
-Marca las propiedades con `[SensitiveData]` y declara tu clase `Request` como `partial`. El generador escribirá la lógica de `ClearSensitiveProperties` por ti.
+### 1. Data Scrubbing (`ClearSensitiveProperties`)
+Mark password or sensitive string fields with `[SensitiveData]` and declare the request as `partial`. The source generator automatically outputs the scrubbing logic:
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Domain.Attributes;
@@ -418,11 +431,11 @@ public partial class LoginRequest : Request<LoginResponse>
 }
 ```
 
-### 2. Auto-Configuración de ModelBuilder (EF Core)
-En tus clases de configuración de EF Core (`IEntityTypeConfiguration<T>`), el generador identificará cada clase y producirá un método de extensión en la clase `ModelBuilderGeneratedExtensions` dentro del espacio de nombres `Identity.Infrastructure`:
+### 2. Auto-Configuration of ModelBuilder (EF Core)
+The generator tracks classes implementing `IEntityTypeConfiguration<T>` and produces a `ModelBuilderGeneratedExtensions` class inside the `Identity.Infrastructure` namespace:
 
 ```csharp
-// En tu DbContext simplemente llama a:
+// Inside your DbContext
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     modelBuilder.ApplyGeneratedConfigurations();
@@ -431,12 +444,12 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 
 ---
 
-## Requisitos
+## Requirements
 
-- **.NET 10.0** o superior
+- **.NET 10.0** or higher
 - **EF Core 10.0**
-- **EFCore.BulkExtensions** (opcional para la optimización de `Upsert`)
+- **EFCore.BulkExtensions** (optional, for bulk operations)
 
-## Licencia
+## License
 
-Este proyecto está bajo la Licencia MIT. Ver el archivo [LICENSE](LICENSE) para más detalles.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
