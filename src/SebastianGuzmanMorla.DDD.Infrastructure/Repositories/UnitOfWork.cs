@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using SebastianGuzmanMorla.DDD.Domain.Interfaces;
 
-namespace SebastianGuzmanMorla.DDD.Repositories;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
 
 public sealed class UnitOfWork<TContext>(
     TContext context

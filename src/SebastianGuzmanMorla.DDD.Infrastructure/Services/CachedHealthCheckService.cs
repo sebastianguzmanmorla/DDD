@@ -7,7 +7,7 @@ using SebastianGuzmanMorla.DDD.Domain.Models;
 using SebastianGuzmanMorla.DDD.Domain.Options;
 using StackExchange.Redis;
 
-namespace SebastianGuzmanMorla.DDD.Services;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Services;
 
 public class CachedHealthCheckService
 (

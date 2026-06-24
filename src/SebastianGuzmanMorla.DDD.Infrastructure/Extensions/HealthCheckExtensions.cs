@@ -8,10 +8,10 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using SebastianGuzmanMorla.DDD.Domain.Models;
 using SebastianGuzmanMorla.DDD.Domain.Options;
-using SebastianGuzmanMorla.DDD.Services;
+using SebastianGuzmanMorla.DDD.Infrastructure.Services;
 using StackExchange.Redis;
 
-namespace SebastianGuzmanMorla.DDD.Extensions;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Extensions;
 
 public static class HealthCheckExtensions
 {

@@ -6,10 +6,17 @@ This document provides system prompt context, syntax, and guidelines for AI codi
 
 ## 1. Project Architecture & Structure
 
-The codebase is split into three main components:
+The codebase is split into four main components:
 1. **`SebastianGuzmanMorla.DDD.Domain`**: Contains base entities (`Entity`), core interfaces (`IRepository`, `IRequestHandler`, `IUnitOfWork`, `INotification`), attributes (`[SensitiveData]`, `[LogIgnore]`), and message definitions (`Request`, `Response`).
-2. **`SebastianGuzmanMorla.DDD`**: Implements EF Core repositories, caching decorators (`CachedRepository`), unit of work (`UnitOfWork`), and base handlers (`RequestHandler`, `RequestPageHandler`).
-3. **`SebastianGuzmanMorla.DDD.Generator`**: Roslyn Source Generators to automate DI registration, sensitive property scrubbing, and EF Core entity type configurations.
+2. **`SebastianGuzmanMorla.DDD`**: Implements base Minimal API mapping (`MapRequest`), smart enum authorization requirements, and OpenAPI transformers. It is clean of database-specific dependencies (such as EF Core or Redis).
+3. **`SebastianGuzmanMorla.DDD.Infrastructure`**: Implements EF Core repositories, caching decorators (`CachedRepository`), unit of work (`UnitOfWork`), base handlers (`RequestHandler`, `RequestPageHandler`), Redis cached health check services, and exception middleware.
+4. **`SebastianGuzmanMorla.DDD.Generator`**: Roslyn Source Generators to automate DI registration, sensitive property scrubbing, and EF Core entity type configurations.
+
+### NuGet Installation Quick Reference
+Depending on the layer, agents should suggest/add the correct package reference:
+- **Domain/Contracts Layer**: `dotnet add package SebastianGuzmanMorla.DDD.Domain --version 1.0.3`
+- **Application/Web API Layer**: `dotnet add package SebastianGuzmanMorla.DDD --version 1.0.3`
+- **Infrastructure/Persistence Layer**: `dotnet add package SebastianGuzmanMorla.DDD.Infrastructure --version 1.0.3`
 
 ---
 
@@ -44,7 +51,7 @@ To define a repository for an entity:
    ```
 2. Implement it inheriting from `Repository<TContext, TEntity>`:
    ```csharp
-   using SebastianGuzmanMorla.DDD.Repositories;
+   using SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
 
    public class CustomerRepository(IServiceProvider serviceProvider) 
        : Repository<MyDbContext, Customer>(serviceProvider), ICustomerRepository
@@ -69,7 +76,7 @@ If an entity requires automatic Redis caching decoration, implement the reposito
   - `CacheExpiry` (optional): Defaults to 10 minutes.
 
 ```csharp
-using SebastianGuzmanMorla.DDD.Repositories;
+using SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
 using System.Text.Json.Serialization.Metadata;
 
 public class CustomerRepository(IServiceProvider serviceProvider) 
@@ -147,7 +154,7 @@ Implement handlers inheriting from `RequestHandler<TContext, TRequest, TResponse
 - If an `IValidator<TRequest>` is registered in the dependency injection container, the handler automatically performs validation before invoking `Execute`. If validation fails, it returns a `400 BadRequest` response with errors.
 
 ```csharp
-using SebastianGuzmanMorla.DDD.Handlers;
+using SebastianGuzmanMorla.DDD.Infrastructure.Handlers;
 
 public class AuthenticateUserHandler(IServiceProvider serviceProvider)
     : RequestHandler<MyDbContext, AuthenticateUserRequest, Response<string>>(serviceProvider)
@@ -191,6 +198,8 @@ using SebastianGuzmanMorla.DDD.Domain.Entities;
 
 public class User : Entity, ISecretHash
 {
+    public required string Name { get; set; }
+    public required string Email { get; set; }
     public string? SecretHash { get; set; }
 }
 ```
@@ -341,6 +350,8 @@ Configure the generic `ExceptionHandlerMiddleware<TContext>` (from `SebastianGuz
 
 ```csharp
 // Program.cs
+using SebastianGuzmanMorla.DDD.Infrastructure.Middleware;
+
 app.UseMiddleware<ExceptionHandlerMiddleware<MyDbContext>>();
 ```
 
@@ -357,13 +368,15 @@ To prevent hammering databases and external APIs on every health check poll, con
            options.CacheIntervalSeconds = 30;
        });
    ```
-2. **Register Background Service**:
+
+2. **Register the Service & Map the Endpoint**:
    ```csharp
+   using SebastianGuzmanMorla.DDD.Infrastructure.Extensions;
+   using SebastianGuzmanMorla.DDD.Infrastructure.Services;
+
    builder.Services.AddSingleton<CachedHealthCheckService>();
    builder.Services.AddHostedService(sp => sp.GetRequiredService<CachedHealthCheckService>());
-   ```
-3. **Map endpoint**:
-   ```csharp
+
    app.MapCachedHealthChecks("/health");
    ```
 

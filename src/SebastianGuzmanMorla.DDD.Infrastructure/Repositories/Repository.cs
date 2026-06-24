@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SebastianGuzmanMorla.DDD.Domain.Entities;
 using SebastianGuzmanMorla.DDD.Domain.Interfaces;
 
-namespace SebastianGuzmanMorla.DDD.Repositories;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
 
 public abstract class Repository<TContext, TEntity>(
     IServiceProvider serviceProvider

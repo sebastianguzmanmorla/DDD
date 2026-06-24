@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SebastianGuzmanMorla.DDD.Domain.Entities;
 using SebastianGuzmanMorla.DDD.Domain.Messaging;
 
-namespace SebastianGuzmanMorla.DDD.Handlers;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Handlers;
 
 public abstract class RequestPageHandler<TContext, TRequest, TResponse, TEntity, TResponseEntity>(
     IServiceProvider serviceProvider

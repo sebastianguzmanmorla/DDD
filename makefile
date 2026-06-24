@@ -5,6 +5,7 @@ endif
 
 # Variables
 PROJECT_PATH=src/SebastianGuzmanMorla.DDD/SebastianGuzmanMorla.DDD.csproj
+INFRASTRUCTURE_PROJECT_PATH=src/SebastianGuzmanMorla.DDD.Infrastructure/SebastianGuzmanMorla.DDD.Infrastructure.csproj
 DOMAIN_PROJECT_PATH=src/SebastianGuzmanMorla.DDD.Domain/SebastianGuzmanMorla.DDD.Domain.csproj
 PACK_OUTPUT=artifacts
 NUGET_SOURCE=https://api.nuget.org/v3/index.json
@@ -27,17 +28,20 @@ clean:
 	@echo "Limpiando binarios..."
 	@-$(RM_DIR)
 	@dotnet clean $(PROJECT_PATH) -c Release
+	@dotnet clean $(INFRASTRUCTURE_PROJECT_PATH) -c Release
 	@dotnet clean $(DOMAIN_PROJECT_PATH) -c Release
 
 build:
 	@echo "Compilando proyectos..."
 	@dotnet build $(DOMAIN_PROJECT_PATH) -c Release
 	@dotnet build $(PROJECT_PATH) -c Release
+	@dotnet build $(INFRASTRUCTURE_PROJECT_PATH) -c Release
 
 pack: clean build
 	@echo "Empaquetando proyectos..."
 	@dotnet pack $(DOMAIN_PROJECT_PATH) -c Release -o $(PACK_OUTPUT)
 	@dotnet pack $(PROJECT_PATH) -c Release -o $(PACK_OUTPUT)
+	@dotnet pack $(INFRASTRUCTURE_PROJECT_PATH) -c Release -o $(PACK_OUTPUT)
 
 push: check-env pack
 	@echo "Publicando en NuGet..."

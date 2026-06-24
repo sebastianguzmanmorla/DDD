@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using SebastianGuzmanMorla.DDD.Domain.Entities;
 using SebastianGuzmanMorla.DDD.Domain.Messaging;
 
-namespace SebastianGuzmanMorla.DDD.Middleware;
+namespace SebastianGuzmanMorla.DDD.Infrastructure.Middleware;
 
 public class ExceptionHandlerMiddleware<TContext>(RequestDelegate next)
     where TContext : DbContext
