@@ -7,7 +7,7 @@
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageOutputPath>$(MSBuildThisFileDirectory)../../artifacts/</PackageOutputPath>
         <PackageId>SebastianGuzmanMorla.DDD.Domain</PackageId>
-        <Version>1.0.3</Version>
+        <Version>1.0.4</Version>
         <Authors>Sebastián Guzmán Morla</Authors>
         <Description>Biblioteca de dominio que define entidades base, mensajes y atributos para la implementación de Domain-Driven Design (DDD) en .NET 10.0+.</Description>
         <PackageProjectUrl>https://github.com/sebastianguzmanmorla/DDD</PackageProjectUrl>

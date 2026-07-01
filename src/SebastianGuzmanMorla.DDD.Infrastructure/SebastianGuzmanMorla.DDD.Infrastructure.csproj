@@ -7,7 +7,7 @@
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageOutputPath>$(MSBuildThisFileDirectory)../../artifacts/</PackageOutputPath>
         <PackageId>SebastianGuzmanMorla.DDD.Infrastructure</PackageId>
-        <Version>1.0.3</Version>
+        <Version>1.0.4</Version>
         <Authors>Sebastián Guzmán Morla</Authors>
         <Description>Biblioteca de infraestructura para la implementación de Domain-Driven Design (DDD) en .NET con soporte para Entity Framework Core y Redis.</Description>
         <PackageProjectUrl>https://github.com/sebastianguzmanmorla/DDD</PackageProjectUrl>

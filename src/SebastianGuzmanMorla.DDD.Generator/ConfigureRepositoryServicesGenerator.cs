@@ -80,13 +80,15 @@ public sealed class ConfigureRepositoryServicesGenerator : IIncrementalGenerator
                         continue;
                     }
 
-                    foreach (INamedTypeSymbol? childTypeSymbol in namedTypeSymbol.Interfaces)
-                    foreach (INamedTypeSymbol? baseTypeSymbol in childTypeSymbol.AllInterfaces)
-                        if (SymbolEqualityComparer.Default.Equals(baseTypeSymbol.OriginalDefinition, repositorySymbol))
+                    foreach (INamedTypeSymbol? interfaceSymbol in namedTypeSymbol.AllInterfaces)
+                    {
+                        if (SymbolEqualityComparer.Default.Equals(interfaceSymbol.OriginalDefinition, repositorySymbol) ||
+                            interfaceSymbol.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, repositorySymbol)))
                         {
                             sourceBuilder.AppendLine(
-                                $"        services.AddScoped(typeof({childTypeSymbol.ToDisplayString()}), typeof({namedTypeSymbol.ToDisplayString()}));");
+                                $"        services.AddScoped(typeof({interfaceSymbol.ToDisplayString()}), typeof({namedTypeSymbol.ToDisplayString()}));");
                         }
+                    }
                 }
 
                 sourceBuilder.AppendLine("    }");
