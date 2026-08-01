@@ -1,6 +1,6 @@
 # SebastianGuzmanMorla.DDD
 
-A base library for implementing **Domain-Driven Design (DDD)** in .NET 10.0+ that integrates the Repository pattern, Unit of Work, CQS Request/Response messaging, and a set of Roslyn **Source Generators** to automate Dependency Injection registration for repositories, handlers, entity configurations, and data scrubbing.
+A base library for implementing **Domain-Driven Design (DDD)** in .NET 9.0 and .NET 10.0+ that integrates the Repository pattern, Unit of Work, CQS Request/Response messaging, UTC DateTime converters, and a set of Roslyn **Source Generators** to automate Dependency Injection registration for repositories, handlers, entity configurations, and data scrubbing.
 
 ## Features
 
@@ -8,8 +8,10 @@ A base library for implementing **Domain-Driven Design (DDD)** in .NET 10.0+ tha
 - **Repository & Unit of Work Patterns**:
   - Generic, extensible implementation on top of **Entity Framework Core**.
   - Transactional support and automatic or controlled saving (`UnitOfWork`).
-  - Advanced operations including `Upsert` (bulk-optimized), `SoftDelete`, and `HardDelete`.
+  - Built-in repository mutation methods: `Add`, `Update`, `SoftDelete`, `Upsert`, and `HardDelete`.
   - Automatic cache decoration via Redis (`CachedRepository`).
+- **UTC DateTime Value Converters**:
+  - Native EF Core `UtcDateTimeConverter` and `NullableUtcDateTimeConverter` in `SebastianGuzmanMorla.DDD.Infrastructure.Converters` to enforce UTC Kind compatibility with PostgreSQL.
 - **CQS Messaging Architecture**:
   - Standard request and response structures: `Request<TResponse>` and `Response<TData>`.
   - Processing base classes `RequestHandler` and `RequestPageHandler` integrated with the validation engine `SebastianGuzmanMorla.Validator`.
@@ -19,6 +21,8 @@ A base library for implementing **Domain-Driven Design (DDD)** in .NET 10.0+ tha
   - **`ConfigureHandlerServicesGenerator`**: Automatically registers all request handlers (`IRequestHandler<TRequest, TResponse>`), notification handlers (`INotificationHandler<TNotification>`), and custom request binders (`IRequestBinder<TRequest, TErrorResponse>`).
   - **`ClearSensitivePropertiesGenerator`**: Generates implementation to automatically scrub properties marked with `[SensitiveData]` from `Request` objects using `ClearSensitiveProperties()`.
   - **`EntityTypeConfigurationGenerator`**: Generates extension methods to automatically apply all `IEntityTypeConfiguration<T>` implementations to the EF Core `ModelBuilder`.
+- **AI Agent Skills (Progressive Disclosure)**:
+  - Packaged AI Coding Assistant Skills (`SKILL.md` and 20 `.skills/` sub-skill modules) included in NuGet packages to instruct agents (Antigravity, Gemini, Copilot, Claude) on generating 100% compliant DDD code.
 
 ---
 
@@ -26,7 +30,7 @@ The library is split into three NuGet packages according to responsibilities and
 
 1. **`SebastianGuzmanMorla.DDD.Domain`**: Contains core domain entities (`Entity`), base messaging contracts (`Request`, `Response`), abstract interfaces (`IRepository`, `IUnitOfWork`), and core attributes. It is fully independent of ASP.NET Core and external databases.
 2. **`SebastianGuzmanMorla.DDD`**: Web and API integration components for ASP.NET Core (e.g. Minimal API `MapRequest` mapping, OpenAPI transformers, Smart Enum authorization requirements). No database or Redis dependencies.
-3. **`SebastianGuzmanMorla.DDD.Infrastructure`**: Persistence layer implementing EF Core repositories, Redis cached repositories (`CachedRepository`), transactional Unit of Work, exception middleware, and cached health check background services.
+3. **`SebastianGuzmanMorla.DDD.Infrastructure`**: Persistence layer implementing EF Core repositories, Redis cached repositories (`CachedRepository`), transactional Unit of Work, UTC value converters (`UtcDateTimeConverter`, `NullableUtcDateTimeConverter`), exception middleware, and cached health check background services.
 
 ---
 
@@ -36,17 +40,17 @@ Add the corresponding NuGet package to your project layer:
 
 For the Contract/Domain layer (clean domain models and interfaces):
 ```bash
-dotnet add package SebastianGuzmanMorla.DDD.Domain --version 1.0.3
+dotnet add package SebastianGuzmanMorla.DDD.Domain --version 1.0.5
 ```
 
 For the Application/Web API layer (requires Minimal API, OpenAPI, or endpoint mappings):
 ```bash
-dotnet add package SebastianGuzmanMorla.DDD --version 1.0.3
+dotnet add package SebastianGuzmanMorla.DDD --version 1.0.5
 ```
 
 For the Infrastructure/Persistence layer (requires EF Core, Redis, generic repositories, or transactional handlers):
 ```bash
-dotnet add package SebastianGuzmanMorla.DDD.Infrastructure --version 1.0.3
+dotnet add package SebastianGuzmanMorla.DDD.Infrastructure --version 1.0.5
 ```
 
 ---
@@ -90,12 +94,21 @@ public class ProductRepository(IServiceProvider serviceProvider)
 {
     public async Task<List<Product>> GetExpensiveProducts(decimal minPrice)
     {
+        // Queryable automatically applies .AsNoTracking() and .Where(p => p.DeletedAt == null)
         return await Queryable
             .Where(p => p.Price >= minPrice)
             .ToListAsync();
     }
 }
 ```
+
+#### Repository Mutation Methods
+All derived repositories inherit built-in mutation methods:
+- `await repository.Add(cancellationToken, product);` (inserts entity and sets `UpdatedAt = DateTime.UtcNow`)
+- `await repository.Update(cancellationToken, product);` (persists changes and sets `UpdatedAt = DateTime.UtcNow`)
+- `await repository.SoftDelete(cancellationToken, product);` (soft deletes entity and sets `DeletedAt = DateTime.UtcNow`)
+- `await repository.Upsert(cancellationToken, product);` (bulk PostgreSQL upsert via `FlexLabs.EntityFrameworkCore.Upsert`)
+- `await repository.HardDelete(cancellationToken, product);` (bulk SQL delete execution by ID)
 
 #### Redis Cached Repository (`CachedRepository`)
 To enable automatic caching on Redis for your entity repository, inherit from `CachedRepository<TContext, TEntity>` instead of `Repository`:
@@ -144,6 +157,28 @@ public static partial class ConfigureRepositoryServices
 }
 ```
 
+#### UTC DateTime Value Converters
+Register built-in UTC converters in your `DbContext.ConfigureConventions` method to automatically ensure DateTime properties use `DateTimeKind.Utc`:
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+using SebastianGuzmanMorla.DDD.Infrastructure.Converters;
+
+public class MyDbContext(DbContextOptions<MyDbContext> options) : DbContext(options)
+{
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        base.ConfigureConventions(configurationBuilder);
+
+        configurationBuilder.Properties<DateTime>()
+            .HaveConversion<UtcDateTimeConverter>();
+
+        configurationBuilder.Properties<DateTime?>()
+            .HaveConversion<NullableUtcDateTimeConverter>();
+    }
+}
+```
+
 ### 3. Messaging (Requests, Responses, and Handlers)
 
 Define your CQS Request and Response structures by inheriting from the base classes:
@@ -169,7 +204,7 @@ public class CreateProductResponse : Response
 ```
 
 #### Auditing Exclusions (`[LogIgnore]`)
-To prevent specific requests (e.g. high-frequency heartbeat ping calls) from producing audit logs in the database, annotate the request with the `[LogIgnore]` attribute:
+To prevent specific requests (e.g. high-frequency heartbeat ping calls or read-only queries) from producing audit logs in the database, annotate the request with the `[LogIgnore]` attribute:
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Domain.Attributes;
@@ -186,8 +221,10 @@ Implement the Handler by inheriting from `RequestHandler<TContext, TRequest, TRe
 ```csharp
 using SebastianGuzmanMorla.DDD.Infrastructure.Handlers;
 
-public class CreateProductHandler(IServiceProvider serviceProvider) 
-    : RequestHandler<MyDbContext, CreateProductRequest, CreateProductResponse>(serviceProvider)
+public class CreateProductHandler(
+    IServiceProvider serviceProvider,
+    IProductRepository productRepository
+) : RequestHandler<MyDbContext, CreateProductRequest, CreateProductResponse>(serviceProvider)
 {
     protected override async Task<CreateProductResponse> Execute(
         CreateProductRequest request, 
@@ -195,7 +232,8 @@ public class CreateProductHandler(IServiceProvider serviceProvider)
     {
         var product = new Product { Name = request.Name, Price = request.Price };
         
-        await ServiceProvider.GetRequiredService<IProductRepository>().Add(cancellationToken, product);
+        // Always interact with DB through Repositories, never DbContext directly
+        await productRepository.Add(cancellationToken, product);
         
         return new CreateProductResponse { ProductId = product.Id };
     }
@@ -242,7 +280,7 @@ public class User : Entity, ISecretHash
 
 #### Hashing credentials:
 ```csharp
-using SebastianGuzmanMorla.DDD;
+using SebastianGuzmanMorla.DDD.Domain.Cryptography;
 
 var user = new User
 {
@@ -256,7 +294,7 @@ await userRepository.Add(cancellationToken, user);
 
 #### Verifying credentials:
 ```csharp
-using SebastianGuzmanMorla.DDD.Extensions;
+using SebastianGuzmanMorla.DDD.Domain.Extensions;
 
 User? user = await userRepository.FirstOrDefault(email, cancellationToken);
 
@@ -444,11 +482,17 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 
 ---
 
+## AI Agent Skills (Progressive Disclosure)
+
+This repository includes a modular AI Agent Skill architecture (`SKILL.md` and 20 `.skills/` sub-skill modules) included directly inside the published NuGet packages. AI coding assistants (Antigravity, Gemini, Copilot, Claude) automatically load these skills to follow strict DDD rules, folder conventions, and repository exclusivity patterns.
+
+---
+
 ## Requirements
 
-- **.NET 10.0** or higher
-- **EF Core 10.0**
-- **EFCore.BulkExtensions** (optional, for bulk operations)
+- **.NET 9.0** or **.NET 10.0+**
+- **EF Core 9.0 / 10.0**
+- **FlexLabs.EntityFrameworkCore.Upsert** (for bulk upserts)
 
 ## License
 

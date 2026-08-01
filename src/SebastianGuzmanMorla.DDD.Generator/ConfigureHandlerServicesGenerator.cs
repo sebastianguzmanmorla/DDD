@@ -60,6 +60,9 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                     compilation.GetTypeByMetadataName("SebastianGuzmanMorla.DDD.Interfaces.IRequestBinder`2") ??
                     throw new Exception("SebastianGuzmanMorla.DDD.Interfaces.IRequestBinder`2");
 
+                INamedTypeSymbol? pageValidatorSymbol =
+                    compilation.GetTypeByMetadataName("SebastianGuzmanMorla.DDD.Validators.PageValidator");
+
 
                 StringBuilder sourceBuilder = new();
 
@@ -72,6 +75,11 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                 sourceBuilder.AppendLine(
                     "    private static partial void ConfigureGenerated(IServiceCollection services)");
                 sourceBuilder.AppendLine("    {");
+
+                if (pageValidatorSymbol is not null)
+                {
+                    sourceBuilder.AppendLine("        services.AddSingleton<SebastianGuzmanMorla.Validator.Interfaces.IValidator<SebastianGuzmanMorla.DDD.Domain.Interfaces.IPageValidation>, SebastianGuzmanMorla.DDD.Validators.PageValidator>();");
+                }
 
                 foreach (ClassDeclarationSyntax? declaration in candidates)
                 {
