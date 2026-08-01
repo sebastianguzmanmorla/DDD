@@ -7,7 +7,7 @@
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageOutputPath>$(MSBuildThisFileDirectory)../../artifacts/</PackageOutputPath>
         <PackageId>SebastianGuzmanMorla.DDD.Domain</PackageId>
-        <Version>1.0.4</Version>
+        <Version>1.0.5</Version>
         <Authors>Sebastián Guzmán Morla</Authors>
         <Description>Biblioteca de dominio que define entidades base, mensajes y atributos para la implementación de Domain-Driven Design (DDD) en .NET 10.0+.</Description>
         <PackageProjectUrl>https://github.com/sebastianguzmanmorla/DDD</PackageProjectUrl>
@@ -22,7 +22,8 @@
     <ItemGroup>
         <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
         <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
-        <None Include="..\..\AGENTS.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\SKILL.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\.skills\**" Pack="true" PackagePath="\.skills\" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
@@ -30,7 +31,11 @@
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="SebastianGuzmanMorla.Validator" Version="1.0.2" />
     </ItemGroup>
 
     <ItemGroup>

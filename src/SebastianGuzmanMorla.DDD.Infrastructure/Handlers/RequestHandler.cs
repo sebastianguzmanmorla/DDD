@@ -94,12 +94,12 @@ public abstract class RequestHandler<TContext, TRequest, TResponse>(
 
     protected abstract Task<TResponse> Execute(TRequest request, CancellationToken cancellationToken = default);
 
-    protected virtual Task OnException(TRequest request, Exception exception, CancellationToken cancellationToken)
+    protected virtual Task OnException(TRequest request, Exception exception, CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;
     }
 
-    protected virtual Task OnAfterExecute(TRequest request, TResponse response, CancellationToken cancellationToken)
+    protected virtual Task OnAfterExecute(TRequest request, TResponse response, CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;
     }

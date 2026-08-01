@@ -7,7 +7,7 @@
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageOutputPath>$(MSBuildThisFileDirectory)../../artifacts/</PackageOutputPath>
         <PackageId>SebastianGuzmanMorla.DDD.Infrastructure</PackageId>
-        <Version>1.0.4</Version>
+        <Version>1.0.5</Version>
         <Authors>Sebastián Guzmán Morla</Authors>
         <Description>Biblioteca de infraestructura para la implementación de Domain-Driven Design (DDD) en .NET con soporte para Entity Framework Core y Redis.</Description>
         <PackageProjectUrl>https://github.com/sebastianguzmanmorla/DDD</PackageProjectUrl>
@@ -26,7 +26,8 @@
     <ItemGroup>
         <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
         <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
-        <None Include="..\..\AGENTS.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\SKILL.md" Pack="true" PackagePath="\" />
+        <None Include="..\..\.skills\**" Pack="true" PackagePath="\.skills\" />
     </ItemGroup>
     
     <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
