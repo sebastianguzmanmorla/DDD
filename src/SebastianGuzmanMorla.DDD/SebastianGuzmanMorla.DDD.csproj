@@ -7,9 +7,9 @@
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageOutputPath>$(MSBuildThisFileDirectory)../../artifacts/</PackageOutputPath>
         <PackageId>SebastianGuzmanMorla.DDD</PackageId>
-        <Version>1.0.5</Version>
+        <Version>1.0.6</Version>
         <Authors>Sebastián Guzmán Morla</Authors>
-        <Description>Biblioteca base para la implementación de Domain-Driven Design (DDD) en .NET 10.0+ con soporte para repositorios EF Core, Unit of Work y Source Generators.</Description>
+        <Description>Base library for implementing Domain-Driven Design (DDD) in .NET 10.0+ with support for EF Core repositories, Unit of Work, and Source Generators.</Description>
         <PackageProjectUrl>https://github.com/sebastianguzmanmorla/DDD</PackageProjectUrl>
         <RepositoryUrl>https://github.com/sebastianguzmanmorla/DDD.git</RepositoryUrl>
         <RepositoryType>git</RepositoryType>

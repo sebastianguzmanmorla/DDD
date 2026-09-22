@@ -60,7 +60,7 @@ public static class HealthCheckExtensions
                 if (string.IsNullOrEmpty(json))
                 {
                     context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    await context.Response.WriteAsync("Health check report no disponible en caché o en vivo.");
+                    await context.Response.WriteAsync("Health check report unavailable from cache or live checks.");
                     return;
                 }
 

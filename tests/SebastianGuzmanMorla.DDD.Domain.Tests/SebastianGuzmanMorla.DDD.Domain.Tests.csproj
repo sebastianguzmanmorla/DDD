@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../TestProjects.props" />
+  <ItemGroup>
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <ProjectReference Include="../../src/SebastianGuzmanMorla.DDD.Domain/SebastianGuzmanMorla.DDD.Domain.csproj" />
+    <ProjectReference Include="../Consumer/Consumer.Domain/Consumer.Domain.csproj" />
+    <Compile Include="../Shared/ValidatorTestBase.cs" Link="Shared/ValidatorTestBase.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Consumer.Domain/Consumer.Domain.csproj" />
+    <ProjectReference Include="../../../src/SebastianGuzmanMorla.DDD.Infrastructure/SebastianGuzmanMorla.DDD.Infrastructure.csproj" />
+    <ProjectReference Include="../../../src/SebastianGuzmanMorla.DDD.Generator/SebastianGuzmanMorla.DDD.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

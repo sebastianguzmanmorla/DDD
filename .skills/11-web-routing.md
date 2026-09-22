@@ -14,7 +14,7 @@ using SebastianGuzmanMorla.DDD.Domain.Messaging;
 
 namespace MyProject.Contracts.Messaging.Customers;
 
-public class GetCustomerRequest : Request<GetCustomerResponse>
+public partial class GetCustomerRequest : Request<GetCustomerResponse>
 {
     // Define endpoint constants directly on the contract request object
     public const string Route = "/Customers/{id:guid}";
@@ -56,7 +56,7 @@ public static class CustomerEndpoints
 * **`GET` / `DELETE` methods**: Parameters are bound using `[AsParameters]` from query string or route values.
 * **`POST` / `PUT` / `PATCH` methods**: Request DTO is bound using `[FromBody]` from the HTTP request body.
 * **`Response` output**: Successful responses with `HttpStatusCode.OK` are returned as `Results.Json`.
-* **File outputs (`ResponseFileByte` / `ResponseFilePath`)**: Automatically streamed via `Results.File`.
+* **File outputs (`ResponseFileByte` / `ResponseFilePath`)**: Status `OK` streams via `Results.File`; errors return base JSON without file data or paths.
 * **Error handling**: Validation errors (`400 BadRequest`), not found (`404`), and internal errors (`500`) map automatically according to `Response.Status`.
 
 ---
@@ -66,10 +66,15 @@ public static class CustomerEndpoints
 If a request requires custom source parsing (e.g., reading OAuth tokens from Authorization headers, form fields, or cookies), specify the binder response model:
 
 ```csharp
+var group = app.MapGroup("/oauth");
 group.MapRequest<CustomTokenRequest, TokenResponse, ErrorResponse>(
     CustomTokenRequest.Method,
-    "/oauth/token",
-    "/oauth/token", // Prefixed full route
+    "/oauth", // Group prefix used for OpenAPI metadata
+    "/token", // Route relative to the group
     "OAuth"
 );
 ```
+
+The binder overload has three generic type parameters and four arguments. `prefix`
+is used for metadata; it does not create a route group. Map the group explicitly
+and pass a route relative to it to avoid duplicating the prefix.

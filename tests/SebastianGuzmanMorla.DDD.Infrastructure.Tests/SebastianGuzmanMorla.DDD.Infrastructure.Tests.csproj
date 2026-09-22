@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../TestProjects.props" />
+  <Import Project="../SqliteTests.props" />
+  <ItemGroup>
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <ProjectReference Include="../../src/SebastianGuzmanMorla.DDD.Infrastructure/SebastianGuzmanMorla.DDD.Infrastructure.csproj" />
+    <ProjectReference Include="../Consumer/Consumer.Application/Consumer.Application.csproj" />
+    <Compile Include="../Shared/ValidatorTestBase.cs" Link="Shared/ValidatorTestBase.cs" />
+    <Compile Include="../Shared/ConsumerFixture.cs" Link="Shared/ConsumerFixture.cs" />
+  </ItemGroup>
+</Project>

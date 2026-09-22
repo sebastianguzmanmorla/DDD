@@ -24,7 +24,8 @@ public sealed class EntityTypeConfigurationGenerator : IIncrementalGenerator
                         return null;
                     }
 
-                    if (symbol.IsAbstract)
+                    // Open generic templates cannot be instantiated without type arguments.
+                    if (symbol.IsAbstract || symbol.IsGenericType)
                     {
                         return null;
                     }

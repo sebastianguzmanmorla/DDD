@@ -21,6 +21,19 @@ public abstract class RequestHandler<TContext, TRequest, TResponse>(
 
     public async Task<TResponse> Handle(TRequest request, CancellationToken cancellationToken = default)
     {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return await HandleCore(request, cancellationToken);
+        }
+        finally
+        {
+            Notifications.Clear();
+        }
+    }
+
+    private async Task<TResponse> HandleCore(TRequest request, CancellationToken cancellationToken)
+    {
         TResponse? response = null;
 
         IValidator<TRequest>? validator = ServiceProvider.GetService<IValidator<TRequest>>();
@@ -37,10 +50,14 @@ public abstract class RequestHandler<TContext, TRequest, TResponse>(
                     response = new TResponse
                     {
                         Status = HttpStatusCode.BadRequest,
-                        Message = "Errores al validar",
+                        Message = "Validation errors",
                         Errors = validationResult.Errors
                     };
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -49,7 +66,7 @@ public abstract class RequestHandler<TContext, TRequest, TResponse>(
                 response = new TResponse
                 {
                     Status = HttpStatusCode.InternalServerError,
-                    Message = ex.Message
+                    Message = "Internal server error"
                 };
             }
         }
@@ -63,6 +80,10 @@ public abstract class RequestHandler<TContext, TRequest, TResponse>(
                     response = await Execute(request, cancellationToken);
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 await OnException(request, ex, cancellationToken);
@@ -70,18 +91,24 @@ public abstract class RequestHandler<TContext, TRequest, TResponse>(
                 response = new TResponse
                 {
                     Status = HttpStatusCode.InternalServerError,
-                    Message = ex.Message
+                    Message = "Internal server error"
                 };
             }
         }
 
         await OnAfterExecute(request, response, cancellationToken);
 
+        if ((int)response.Status is < 200 or >= 300) return response;
+
         foreach (INotification notification in Notifications)
         {
             try
             {
                 await notification.Handle(ServiceProvider, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception)
             {

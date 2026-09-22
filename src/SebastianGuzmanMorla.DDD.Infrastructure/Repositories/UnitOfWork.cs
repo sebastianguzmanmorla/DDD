@@ -57,7 +57,7 @@ public sealed class UnitOfWork<TContext>(
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error ejecutando PostCommitAction: {ex.Message}");
+                Console.WriteLine($"Error executing PostCommitAction: {ex.Message}");
             }
 
         _postCommitActions.Clear();
@@ -65,31 +65,66 @@ public sealed class UnitOfWork<TContext>(
 
     public async Task Rollback(CancellationToken cancellationToken = default)
     {
-        if (_transaction is not null)
+        IDbContextTransaction? transaction = _transaction;
+        try
         {
-            await _transaction.RollbackAsync(cancellationToken);
-            await _transaction.DisposeAsync();
-            _transaction = null;
+            if (transaction is not null)
+            {
+                try
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                }
+                finally
+                {
+                    await transaction.DisposeAsync();
+                }
+            }
         }
-
-        context.ChangeTracker.Clear();
-        _postCommitActions.Clear();
+        finally
+        {
+            _transaction = null;
+            _postCommitActions.Clear();
+            context.ChangeTracker.Clear();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         if (_transaction is not null)
         {
-            await _transaction.RollbackAsync();
-            await _transaction.DisposeAsync();
-            _transaction = null;
+            await Rollback();
+        }
+        else
+        {
+            _postCommitActions.Clear();
         }
     }
 
     public void Dispose()
     {
-        _transaction?.Rollback();
-        _transaction?.Dispose();
-        _transaction = null;
+        // A DI scope may dispose an unused context. Do not initialize EF services here.
+        if (_transaction is null)
+        {
+            _postCommitActions.Clear();
+            return;
+        }
+
+        try
+        {
+            try
+            {
+                _transaction?.Rollback();
+            }
+            finally
+            {
+                _transaction?.Dispose();
+            }
+        }
+        finally
+        {
+            _transaction = null;
+            _postCommitActions.Clear();
+            context.ChangeTracker.Clear();
+        }
     }
 }

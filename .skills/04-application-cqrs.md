@@ -21,7 +21,7 @@ Create Requests and Responses in `[Project].Contracts/Messaging/[Feature]`.
 * Commands and queries inherit from `Request<TResponse>`.
 * Responses inherit from `Response` (or `ResponsePage<TData>` for pagination).
 * **RULE (Redacting Sensitive Data)**: Properties that contain credentials, passwords, or secret tokens **MUST** be decorated with `[SensitiveData]` (from `SebastianGuzmanMorla.DDD.Domain.Attributes`).
-* **RULE (Partial Requirement)**: Any Request containing sensitive properties must be declared as a `partial class` so the Roslyn Source Generator can implement property redaction.
+* **RULE (Partial Requirement)**: Every concrete request must either be `partial` so the generator implements `ClearSensitiveProperties`, or provide that override explicitly. For nested requests, containing types must also be partial.
 
 ```csharp
 using System.Text.Json.Serialization;
@@ -58,7 +58,7 @@ using SebastianGuzmanMorla.DDD.Domain.Messaging;
 namespace MyProject.Contracts.Messaging.Reports;
 
 [LogIgnore]
-public class ExportReportRequest : Request<ResponseFileByte>
+public partial class ExportReportRequest : Request<ResponseFileByte>
 {
     public const string Route = "/Reports/export";
     public const RequestMethod Method = RequestMethod.Get;
@@ -69,8 +69,8 @@ In the handler:
 ```csharp
 return new ResponseFileByte
 {
-    FileBytes = pdfBytes,
-    ContentType = "application/pdf",
+    Bytes = pdfBytes,
+    FileType = "application/pdf",
     FileName = "Report.pdf"
 };
 ```
@@ -80,11 +80,11 @@ return new ResponseFileByte
 return new ResponseFilePath
 {
     FilePath = "/tmp/downloads/Report.xlsx",
-    ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    FileType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     FileName = "Report.xlsx"
 };
 ```
-* Note: `group.MapRequest` automatically converts `ResponseFileByte` and `ResponseFilePath` into `Results.File(...)` HTTP stream results.
+* `group.MapRequest` streams file responses only when the status is `OK`. Other statuses return a base JSON response without file bytes, paths, or download metadata.
 
 ---
 
@@ -159,19 +159,23 @@ public abstract class RequestHandler<TRequest, TResponse>(
                 LogRequest logRequest = request.ToLogEntity(IdentityContext, _jsonSerializerOptions, LogRequestId);
                 await _logRequestRepository.Add(cancellationToken, logRequest);
 
-                response.LogId = logRequest.Id;
-
                 List<Log> logEntries = _logs
                     .Select(x => x.ToLogEntity(_jsonSerializerOptions, logRequest.Id))
                     .ToList();
 
                 await _logRepository.Add(cancellationToken, logEntries);
                 await UnitOfWork.Commit(cancellationToken);
+                response.LogId = logRequest.Id;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await UnitOfWork.Rollback(CancellationToken.None);
+                throw;
             }
             catch (Exception ex)
             {
                 AddLog(LogType.Error, ex.ToString());
-                await UnitOfWork.Rollback(cancellationToken);
+                await UnitOfWork.Rollback(CancellationToken.None);
             }
         }
     }
@@ -225,7 +229,7 @@ public class CreateSampleRequestHandler(
         {
             await UnitOfWork.CreateTransaction(cancellationToken);
 
-            var entity = new SampleEntity { Name = request.Name };
+            var entity = new SampleEntity(request.Name); // Constructor enforces domain invariants
 
             // Add entity via Repository
             await sampleRepository.Add(cancellationToken, entity);
@@ -236,11 +240,10 @@ public class CreateSampleRequestHandler(
 
             return new CreateSampleResponse { Id = entity.Id };
         }
-        catch (Exception ex)
+        catch
         {
-            await UnitOfWork.Rollback(cancellationToken);
-            AddLog(LogType.Error, ex.ToString());
-            return new CreateSampleResponse { Status = HttpStatusCode.InternalServerError, Message = ex.Message };
+            await UnitOfWork.Rollback(CancellationToken.None);
+            throw; // Base handler preserves cancellation and builds safe error responses.
         }
     }
 }
@@ -274,11 +277,10 @@ public class UpdateSampleRequestHandler(
 
             return new Response();
         }
-        catch (Exception ex)
+        catch
         {
-            await UnitOfWork.Rollback(cancellationToken);
-            AddLog(LogType.Error, ex.ToString());
-            return new Response { Status = HttpStatusCode.InternalServerError, Message = ex.Message };
+            await UnitOfWork.Rollback(CancellationToken.None);
+            throw; // Base handler preserves cancellation and builds safe error responses.
         }
     }
 }
@@ -309,11 +311,10 @@ public class DeleteSampleRequestHandler(
 
             return new Response();
         }
-        catch (Exception ex)
+        catch
         {
-            await UnitOfWork.Rollback(cancellationToken);
-            AddLog(LogType.Error, ex.ToString());
-            return new Response { Status = HttpStatusCode.InternalServerError, Message = ex.Message };
+            await UnitOfWork.Rollback(CancellationToken.None);
+            throw; // Base handler preserves cancellation and builds safe error responses.
         }
     }
 }
@@ -347,13 +348,26 @@ The base `RequestHandler` automatically manages the request execution lifecycle:
 1. **Automated Request Validation**: Before executing the handler, it resolves `IValidator<TRequest>` from the DI container (if registered). If validation fails, it halts execution and automatically returns a `400 BadRequest` response containing the collection of validation errors.
 2. **Execute**: Calls your overridden `Execute(TRequest request, CancellationToken cancellationToken)`.
 3. **OnAfterExecute**: Lifecycle hook executing post-operations (such as saving audit `LogRequest` and entity `Log` records inside a UoW transaction).
-4. **Notification Dispatch**: Iterates over all notifications registered during execution and dispatches them.
+4. **Notification Dispatch**: Dispatches queued notifications only for a 2xx response, after `OnAfterExecute`. The queue is cleared in `finally`, including on failure and cancellation.
+
+Validation/execution exceptions reach `OnException` and return a 500 response with
+`Message = "Internal server error"`. Do not catch and return `ex.Message` in concrete
+handlers: rethrow after rollback so the base handler can apply this behavior.
+`OperationCanceledException` propagates when the request token is cancelled;
+`OnException` and `OnAfterExecute` are not called for cancellation during validation
+or execution. Hooks must preserve cancellation themselves. Use an uncancelled token
+for rollback cleanup rather than the already-cancelled request token.
 
 ---
 
 ## Domain Notifications & Events
 
-Notifications represent side-effects or domain events (e.g., sending emails, raising external queue messages) that execute asynchronously after the core database transaction is committed.
+Notifications represent side effects or domain events. Handlers must commit their
+transaction before returning success; the base handler checks response status, not
+a commit record. Dispatch is awaited before `Handle` returns. Non-cancellation
+notification failures are ignored and remaining notifications continue. Delivery
+is best effort, without retries or a durable outbox. Generated notification handlers
+are singletons: do not inject scoped repositories or DbContexts into them.
 
 ### 1. Define Notification (`[Project].Domain/Notifications`)
 Inherit from `INotification` and implement the double-dispatch `Handle` pattern:

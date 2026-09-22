@@ -28,6 +28,11 @@ public abstract class CachedRepository<TContext, TEntity>(
 
     public override async Task<bool> Any(Guid id, CancellationToken cancellationToken = default)
     {
+        if (UnitOfWork.TransactionEnabled)
+        {
+            return await base.Any(id, cancellationToken);
+        }
+
         if (await Cache.KeyExistsAsync(GetKey(id)))
         {
             return true;
@@ -38,6 +43,12 @@ public abstract class CachedRepository<TContext, TEntity>(
 
     public override async Task<TEntity?> FirstOrDefault(Guid id, CancellationToken cancellationToken = default)
     {
+        // Shared cache must neither override transaction reads nor expose uncommitted rows.
+        if (UnitOfWork.TransactionEnabled)
+        {
+            return await base.FirstOrDefault(id, cancellationToken);
+        }
+
         RedisValue cachedValue = await Cache.StringGetAsync(GetKey(id));
 
         if (!cachedValue.IsNullOrEmpty)
@@ -61,11 +72,12 @@ public abstract class CachedRepository<TContext, TEntity>(
 
     public override async Task Add(CancellationToken cancellationToken = default, params IEnumerable<TEntity> items)
     {
-        await base.Add(cancellationToken, items);
+        List<TEntity> entities = [.. items];
+        await base.Add(cancellationToken, entities);
 
         await UnitOfWork.RegisterPostCommitAction(async () =>
         {
-            foreach (TEntity item in items)
+            foreach (TEntity item in entities)
             {
                 string json = JsonSerializer.Serialize(item, JsonTypeInfo);
 
@@ -76,17 +88,19 @@ public abstract class CachedRepository<TContext, TEntity>(
 
     public override async Task Update(CancellationToken cancellationToken = default, params IEnumerable<TEntity> items)
     {
-        await base.Update(cancellationToken, items);
+        List<TEntity> entities = [.. items];
+        await base.Update(cancellationToken, entities);
 
-        await UnitOfWork.RegisterPostCommitAction(() => InvalidateCache(items));
+        await UnitOfWork.RegisterPostCommitAction(() => InvalidateCache(entities));
     }
 
     public override async Task<int> Upsert(CancellationToken cancellationToken = default,
         params IEnumerable<TEntity> items)
     {
-        int result = await base.Upsert(cancellationToken, items);
+        List<TEntity> entities = [.. items];
+        int result = await base.Upsert(cancellationToken, entities);
 
-        await UnitOfWork.RegisterPostCommitAction(() => InvalidateCache(items));
+        await UnitOfWork.RegisterPostCommitAction(() => InvalidateCache(entities));
 
         return result;
     }
@@ -94,17 +108,19 @@ public abstract class CachedRepository<TContext, TEntity>(
     public override async Task SoftDelete(CancellationToken cancellationToken = default,
         params IEnumerable<TEntity> items)
     {
-        await base.SoftDelete(cancellationToken, items);
+        List<TEntity> entities = [.. items];
+        await base.SoftDelete(cancellationToken, entities);
 
-        await UnitOfWork.RegisterPostCommitAction(() => InvalidateCache(items));
+        await UnitOfWork.RegisterPostCommitAction(() => InvalidateCache(entities));
     }
 
     public override async Task<int> HardDelete(CancellationToken cancellationToken = default,
         params IEnumerable<TEntity> items)
     {
-        int result = await base.HardDelete(cancellationToken, items);
+        List<TEntity> entities = [.. items];
+        int result = await base.HardDelete(cancellationToken, entities);
 
-        await UnitOfWork.RegisterPostCommitAction(() => InvalidateCache(items));
+        await UnitOfWork.RegisterPostCommitAction(() => InvalidateCache(entities));
 
         return result;
     }

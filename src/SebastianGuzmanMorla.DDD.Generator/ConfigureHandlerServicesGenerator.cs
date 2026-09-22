@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
@@ -41,12 +42,11 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                     return;
                 }
 
-                string? targetNamespace = GetNamespace(configureClasses.First());
-
-                if (targetNamespace is null)
-                {
-                    return;
-                }
+                ClassDeclarationSyntax marker = configureClasses.First();
+                INamedTypeSymbol? markerSymbol = compilation.GetSemanticModel(marker.SyntaxTree).GetDeclaredSymbol(marker);
+                if (markerSymbol is null) return;
+                string? targetNamespace = markerSymbol.ContainingNamespace.IsGlobalNamespace
+                    ? null : markerSymbol.ContainingNamespace.ToDisplayString();
 
                 INamedTypeSymbol requestHandlerSymbol =
                     compilation.GetTypeByMetadataName("SebastianGuzmanMorla.DDD.Domain.Interfaces.IRequestHandler`2") ??
@@ -68,7 +68,7 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
 
                 sourceBuilder.AppendLine("using Microsoft.Extensions.DependencyInjection;");
                 sourceBuilder.AppendLine();
-                sourceBuilder.AppendLine($"namespace {targetNamespace};");
+                if (targetNamespace is not null) sourceBuilder.AppendLine($"namespace {targetNamespace};");
                 sourceBuilder.AppendLine();
                 sourceBuilder.AppendLine("public static partial class ConfigureHandlerServices");
                 sourceBuilder.AppendLine("{");
@@ -81,6 +81,7 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                     sourceBuilder.AppendLine("        services.AddSingleton<SebastianGuzmanMorla.Validator.Interfaces.IValidator<SebastianGuzmanMorla.DDD.Domain.Interfaces.IPageValidation>, SebastianGuzmanMorla.DDD.Validators.PageValidator>();");
                 }
 
+                HashSet<ISymbol> registered = new(SymbolEqualityComparer.Default);
                 foreach (ClassDeclarationSyntax? declaration in candidates)
                 {
                     SemanticModel semanticModel = compilation.GetSemanticModel(declaration.SyntaxTree);
@@ -91,7 +92,7 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                         continue;
                     }
 
-                    if (namedTypeSymbol.IsAbstract)
+                    if (namedTypeSymbol.IsAbstract || !registered.Add(namedTypeSymbol))
                     {
                         continue;
                     }
@@ -101,14 +102,14 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                         if (SymbolEqualityComparer.Default.Equals(typeSymbol.OriginalDefinition, requestHandlerSymbol))
                         {
                             sourceBuilder.AppendLine(
-                                $"        services.AddScoped(typeof({typeSymbol.ToDisplayString()}), typeof({namedTypeSymbol.ToDisplayString()}));");
+                                $"        services.AddScoped(typeof({typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}), typeof({namedTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}));");
                             continue;
                         }
 
                         if (SymbolEqualityComparer.Default.Equals(typeSymbol.OriginalDefinition, requestBinderSymbol))
                         {
                             sourceBuilder.AppendLine(
-                                $"        services.AddScoped(typeof({typeSymbol.ToDisplayString()}), typeof({namedTypeSymbol.ToDisplayString()}));");
+                                $"        services.AddScoped(typeof({typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}), typeof({namedTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}));");
                             continue;
                         }
 
@@ -116,8 +117,8 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
                         {
                             sourceBuilder.AppendLine(
                                 namedTypeSymbol.IsGenericType
-                                    ? $"        services.AddSingleton(typeof({typeSymbol.ConstructUnboundGenericType().ToDisplayString()}), typeof({namedTypeSymbol.ConstructUnboundGenericType().ToDisplayString()}));"
-                                    : $"        services.AddSingleton(typeof({typeSymbol.ToDisplayString()}), typeof({namedTypeSymbol.ToDisplayString()}));");
+                                    ? $"        services.AddSingleton(typeof({typeSymbol.ConstructUnboundGenericType().ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}), typeof({namedTypeSymbol.ConstructUnboundGenericType().ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}));"
+                                    : $"        services.AddSingleton(typeof({typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}), typeof({namedTypeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}));");
                         }
                     }
                 }
@@ -129,21 +130,4 @@ public sealed class ConfigureHandlerServicesGenerator : IIncrementalGenerator
             });
     }
 
-    private static string? GetNamespace(ClassDeclarationSyntax classDeclaration)
-    {
-        SyntaxNode? parent = classDeclaration.Parent;
-
-        while (parent != null)
-        {
-            switch (parent)
-            {
-                case NamespaceDeclarationSyntax nds: return nds.Name.ToString();
-                case FileScopedNamespaceDeclarationSyntax fnds: return fnds.Name.ToString();
-            }
-
-            parent = parent.Parent;
-        }
-
-        return null;
-    }
 }

@@ -118,7 +118,15 @@ public static class WebApplicationExtensions
 
         if (response.Status != HttpStatusCode.OK)
         {
-            return Results.Json((Response)response, statusCode: (int)response.Status);
+            // Casting does not prevent runtime polymorphic JSON serialization of file data.
+            return Results.Json(new Response
+            {
+                Status = response.Status,
+                Message = response.Message,
+                Errors = response.Errors,
+                LogId = response.LogId,
+                Timestamp = response.Timestamp
+            }, statusCode: (int)response.Status);
         }
 
         return response switch

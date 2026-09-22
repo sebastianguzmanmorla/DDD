@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using SebastianGuzmanMorla.SmartEnum;
 
@@ -19,13 +20,19 @@ public sealed class SmartEnumRequirementHandler<TSmartEnumFlags, TSmartEnum, TVa
 {
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, SmartEnumRequirement<TSmartEnumFlags, TSmartEnum, TValue> requirement)
     {
-        string? claimValue = context.User.FindFirst(claimType)?.Value;
-
-        TSmartEnumFlags flags = SmartEnumFlags<TSmartEnumFlags, TSmartEnum, TValue>.Parse(claimValue);
-
-        if (flags.Has(requirement.Value))
+        foreach (Claim claim in context.User.FindAll(claimType))
         {
-            context.Succeed(requirement);
+            try
+            {
+                TSmartEnumFlags flags = SmartEnumFlags<TSmartEnumFlags, TSmartEnum, TValue>.Parse(claim.Value);
+                if (!flags.Has(requirement.Value)) continue;
+                context.Succeed(requirement);
+                break;
+            }
+            catch (SmartEnumException)
+            {
+                // An unrecognized claim grants no permissions.
+            }
         }
 
         return Task.CompletedTask;

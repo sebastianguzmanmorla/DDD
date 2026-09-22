@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../../src/SebastianGuzmanMorla.DDD.Domain/SebastianGuzmanMorla.DDD.Domain.csproj" />
+    <ProjectReference Include="../../../src/SebastianGuzmanMorla.DDD.Domain.Generator/SebastianGuzmanMorla.DDD.Domain.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <PackageReference Include="SebastianGuzmanMorla.Validator" Version="1.0.2" />
+  </ItemGroup>
+</Project>
