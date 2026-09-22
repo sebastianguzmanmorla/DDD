@@ -9,7 +9,7 @@ Use `SecretHasher` to hash or verify raw secrets:
 
 * **Hash Secret (when saving/creating)**:
   ```csharp
-  using SebastianGuzmanMorla.DDD.Domain.Cryptography;
+  using SebastianGuzmanMorla.DDD;
 
   string hashedPassword = SecretHasher.Hash("myPlainPassword");
   ```
@@ -45,8 +45,16 @@ If a domain entity implements `SebastianGuzmanMorla.DDD.Domain.Interfaces.ISecre
 
 3. **Verifying Secret Extension Method (`ValidateSecret`)**:
    ```csharp
-   using SebastianGuzmanMorla.DDD.Domain.Extensions;
+   using SebastianGuzmanMorla.DDD.Extensions;
 
    // Extension method on ISecretHash instances
    bool isMatch = clientEntity.ValidateSecret(request.Secret);
    ```
+
+## C. Stored Hash Compatibility
+
+The current format is `iterations.base64Salt.base64Key`, using a 16-byte salt and
+a 32-byte key. `Verify` returns `false` for malformed hashes, wrong salt/key sizes,
+null secrets, and iteration counts outside 1–1,000,000. Current hashes use 100,000
+iterations. Imported hashes with different sizes or higher iteration counts need
+a separate migration strategy; do not relax these checks to accept corrupt data.

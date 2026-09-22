@@ -2,6 +2,10 @@
 
 Tests are written using xUnit and `NSubstitute` to mock external services (such as repositories and localizations) resolved from `IServiceProvider`.
 
+Keep validator tests in the corresponding project's `.Tests` project. For handler,
+HTTP, generator, and real PostgreSQL/Redis coverage, use
+[Library and Consumer Testing](21-library-consumer-testing.md).
+
 ---
 
 ## A. ValidatorTestBase Template
@@ -85,6 +89,7 @@ public class DomainValidatorsTests : ValidatorTestBase
         ValidationResult result = await _clientIdValidator.Validate(entity, ServiceProvider);
 
         Assert.True(result.IsValid);
+        Assert.Null(result.Errors);
     }
 
     private class TestClientIdValidation : IClientIdValidation
@@ -93,3 +98,11 @@ public class DomainValidatorsTests : ValidatorTestBase
     }
 }
 ```
+
+Invalid results use JSON-style property paths such as `$.Name` or `$.Size`.
+Check rule messages and repository calls as appropriate: contract validation must
+not query persistence, and a failing prerequisite with `StopAll` must prevent
+later checks. Forward and assert the supplied cancellation token. To compose
+`PageValidator`, the request must explicitly implement `IPageValidation` and its
+concrete validator must be partial; `RequestPage<TResponse>` does not implement
+that interface itself.

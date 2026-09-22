@@ -55,7 +55,7 @@ Must annotate:
 ### B. Domain Context (`DomainJsonSerializerContext.cs`)
 Must annotate:
 * **All Domain Entities**: e.g. `[JsonSerializable(typeof(Customer))]`
-* **Generic Entity Lists (Required for `CachedRepository` Redis caching)**: e.g. `[JsonSerializable(typeof(List<Customer>))]`
+* **Entity Types (Required for `CachedRepository` ID caching)**: e.g. `[JsonSerializable(typeof(Customer))]`. Register `List<Customer>` as well when the consumer serializes entity lists; the ID cache itself uses `JsonTypeInfo<Customer>`.
 * **Custom Value Objects**: e.g. `[JsonSerializable(typeof(Address))]`
 * **Domain Notifications / Events**: e.g. `[JsonSerializable(typeof(WelcomeNotification))]`
 

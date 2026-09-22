@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Consumer.Contracts/Consumer.Contracts.csproj" />
+    <PackageReference Include="SebastianGuzmanMorla.Validator" Version="1.0.2" />
+  </ItemGroup>
+</Project>

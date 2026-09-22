@@ -6,6 +6,21 @@
     <File Path="README.md" />
   </Folder>
   <Project Path="src\SebastianGuzmanMorla.DDD.Generator\SebastianGuzmanMorla.DDD.Generator.csproj" />
+  <Folder Name="/src/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/SebastianGuzmanMorla.DDD.Domain.Generator.Tests/SebastianGuzmanMorla.DDD.Domain.Generator.Tests.csproj" />
+    <Project Path="tests/SebastianGuzmanMorla.DDD.Domain.Tests/SebastianGuzmanMorla.DDD.Domain.Tests.csproj" />
+    <Project Path="tests/SebastianGuzmanMorla.DDD.Generator.Tests/SebastianGuzmanMorla.DDD.Generator.Tests.csproj" />
+    <Project Path="tests/SebastianGuzmanMorla.DDD.Infrastructure.Tests/SebastianGuzmanMorla.DDD.Infrastructure.Tests.csproj" />
+    <Project Path="tests/SebastianGuzmanMorla.DDD.Tests/SebastianGuzmanMorla.DDD.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Consumer/">
+    <Project Path="tests/Consumer/Consumer.Application/Consumer.Application.csproj" />
+    <Project Path="tests/Consumer/Consumer.Contracts/Consumer.Contracts.csproj" />
+    <Project Path="tests/Consumer/Consumer.Domain/Consumer.Domain.csproj" />
+    <Project Path="tests/Consumer/Consumer.Infrastructure/Consumer.Infrastructure.csproj" />
+    <Project Path="tests/Consumer/Consumer.Integration.Tests/Consumer.Integration.Tests.csproj" />
+  </Folder>
   <Project Path="src\SebastianGuzmanMorla.DDD.Domain.Generator\SebastianGuzmanMorla.DDD.Domain.Generator.csproj" />
   <Project Path="src\SebastianGuzmanMorla.DDD.Domain\SebastianGuzmanMorla.DDD.Domain.csproj" />
   <Project Path="src\SebastianGuzmanMorla.DDD\SebastianGuzmanMorla.DDD.csproj" />

@@ -18,7 +18,12 @@ public class ExceptionHandlerMiddleware<TContext>(RequestDelegate next)
         {
             await next.Invoke(context);
         }
-        catch (TaskCanceledException)
+        catch (Exception) when (context.Response.HasStarted)
+        {
+            // Headers and body already belong to the downstream response.
+            throw;
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             context.Response.StatusCode = StatusCodes.Status499ClientClosedRequest;
         }
@@ -73,7 +78,7 @@ public class ExceptionHandlerMiddleware<TContext>(RequestDelegate next)
             {
                 LogId = log?.Id,
                 Status = HttpStatusCode.InternalServerError,
-                Message = "Error Interno"
+                Message = "Internal server error"
             };
 
             await context.Response.WriteAsJsonAsync(response);

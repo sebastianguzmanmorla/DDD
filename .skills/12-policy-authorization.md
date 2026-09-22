@@ -20,6 +20,12 @@ builder.Services.AddSingleton<IAuthorizationHandler, SmartEnumRequirementHandler
 ## B. Define Policies using Smart Enums
 Configure policies during authorization setup using `Scope.[EnumChoice].PolicyName` for type safety:
 
+The handler checks all claims of the configured type (`scope` by default). A missing
+or unrecognized claim grants no permissions; another valid matching claim can still
+satisfy the requirement. Keep `RequireAuthenticatedUser()` in the policy: scope
+matching alone does not require an authenticated identity. Test invalid, missing,
+repeated, and custom-type claims as well as unauthenticated users.
+
 ```csharp
 builder.Services.AddAuthorization(options =>
 {

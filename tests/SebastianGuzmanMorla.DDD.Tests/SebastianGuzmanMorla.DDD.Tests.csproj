@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../TestProjects.props" />
+  <ItemGroup>
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="SebastianGuzmanMorla.SmartEnum" Version="1.0.5" />
+    <ProjectReference Include="../../src/SebastianGuzmanMorla.DDD/SebastianGuzmanMorla.DDD.csproj" />
+    <ProjectReference Include="../Consumer/Consumer.Contracts/Consumer.Contracts.csproj" />
+    <Compile Include="../Shared/ValidatorTestBase.cs" Link="Shared/ValidatorTestBase.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="9.0.16" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.8" />
+  </ItemGroup>
+</Project>

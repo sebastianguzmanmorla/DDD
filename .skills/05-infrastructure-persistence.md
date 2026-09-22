@@ -251,5 +251,23 @@ public class CustomerRepository(
 }
 ```
 
-* **Cache Invalidation Lifecycle**:
-  `CachedRepository` automatically intercepts mutation operations (`Update`, `Upsert`, `SoftDelete`, `HardDelete`) and invalidates matching Redis key patterns during Unit of Work transaction commits.
+### Transaction and Cache Lifecycle
+
+- Within a UoW transaction, `Add`, `Update`, and `SoftDelete` stage changes until
+  `Commit` saves them. Outside a transaction, these methods save immediately.
+  `Upsert` and `HardDelete` execute SQL immediately, participating in the active transaction.
+- `Any(id)` and `FirstOrDefault(id)` bypass Redis while the UoW transaction is active.
+  They query SQL; they do not expose changes EF has not yet sent to the database.
+  Custom queries through `Queryable` do not use the ID cache.
+- After commit, `Add` populates cache entries. `Update`, `Upsert`, `SoftDelete`, and
+  `HardDelete` delete the exact affected ID keys, not wildcard patterns.
+  Without a transaction, cache actions execute immediately after persistence.
+- Rollback or disposal of an active transaction clears tracked changes and pending
+  cache callbacks. Do not reuse entities from the abandoned transaction as committed state.
+- Post-commit callback failures are logged and do not undo the database commit.
+  Redis remains eventually consistent; immediate cache repair and distributed
+  invalidation races are not guaranteed. Outside a transaction, a cache exception
+  can propagate after the database write has already succeeded.
+
+Use the [consumer integration testing guide](21-library-consumer-testing.md) to
+verify these semantics with the production database provider and real Redis.

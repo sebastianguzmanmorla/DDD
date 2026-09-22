@@ -30,19 +30,23 @@ protected override async Task OnAfterExecute(TRequest request, TResponse respons
             LogRequest logRequest = request.ToLogEntity(IdentityContext, _jsonSerializerOptions, LogRequestId);
             await _logRequestRepository.Add(cancellationToken, logRequest);
 
-            response.LogId = logRequest.Id;
-
             List<Log> logEntries = _logs
                 .Select(x => x.ToLogEntity(_jsonSerializerOptions, logRequest.Id))
                 .ToList();
 
             await _logRepository.Add(cancellationToken, logEntries);
             await UnitOfWork.Commit(cancellationToken);
+            response.LogId = logRequest.Id;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await UnitOfWork.Rollback(CancellationToken.None);
+            throw;
         }
         catch (Exception ex)
         {
             AddLog(LogType.Error, ex.ToString());
-            await UnitOfWork.Rollback(cancellationToken);
+            await UnitOfWork.Rollback(CancellationToken.None);
         }
     }
 }
@@ -53,7 +57,11 @@ protected override async Task OnAfterExecute(TRequest request, TResponse respons
 ---
 
 ## C. Request Cloning & Redaction (`ToLogEntity` Extension)
-Clones the request object first before executing `.ClearSensitiveProperties()`, ensuring sensitive credentials (like passwords) are redacted from database logs without mutating state in active execution threads:
+Clone the request before executing `.ClearSensitiveProperties()` so replacing its
+instance property values does not change the original request. `Clone` is shallow:
+nested objects remain shared, and static properties are shared across instances.
+Do not mutate nested/shared state in a custom redaction override; use instance
+properties for request credentials.
 
 ```csharp
 public static LogRequest ToLogEntity(this Request request, IIdentityContext identity, JsonSerializerOptions jsonSerializerOptions, Guid logRequestId)

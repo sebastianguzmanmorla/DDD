@@ -40,17 +40,17 @@ Add the corresponding NuGet package to your project layer:
 
 For the Contract/Domain layer (clean domain models and interfaces):
 ```bash
-dotnet add package SebastianGuzmanMorla.DDD.Domain --version 1.0.5
+dotnet add package SebastianGuzmanMorla.DDD.Domain --version 1.0.6
 ```
 
 For the Application/Web API layer (requires Minimal API, OpenAPI, or endpoint mappings):
 ```bash
-dotnet add package SebastianGuzmanMorla.DDD --version 1.0.5
+dotnet add package SebastianGuzmanMorla.DDD --version 1.0.6
 ```
 
 For the Infrastructure/Persistence layer (requires EF Core, Redis, generic repositories, or transactional handlers):
 ```bash
-dotnet add package SebastianGuzmanMorla.DDD.Infrastructure --version 1.0.5
+dotnet add package SebastianGuzmanMorla.DDD.Infrastructure --version 1.0.6
 ```
 
 ---
@@ -113,9 +113,10 @@ All derived repositories inherit built-in mutation methods:
 #### Redis Cached Repository (`CachedRepository`)
 To enable automatic caching on Redis for your entity repository, inherit from `CachedRepository<TContext, TEntity>` instead of `Repository`:
 
-- Automatically queries Redis before falling back to the database.
+- `Any(id)` and `FirstOrDefault(id)` use Redis outside UoW transactions and query SQL directly inside them.
 - Registers post-commit actions to invalidate or refresh cache entries during write operations (`Update`, `Upsert`, `SoftDelete`, `HardDelete`).
-- Requires defining the key prefix (`CacheKeyPrefix`), cache expiration (`CacheExpiry`), and System.Text.Json metadata context (`JsonTypeInfo`):
+- Define `CacheKeyPrefix` and `JsonTypeInfo`; optionally override `CacheExpiry` (10 minutes by default).
+- Rollback/disposal clears pending changes and callbacks. Cache callback failures after commit do not undo database writes; Redis remains eventually consistent. See [transaction/cache semantics](.skills/05-infrastructure-persistence.md).
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
@@ -148,6 +149,8 @@ namespace MyProject.Infrastructure;
 
 public static partial class ConfigureRepositoryServices
 {
+    private static partial void ConfigureGenerated(IServiceCollection services);
+
     public static IServiceCollection ConfigureInfrastructure(this IServiceCollection services)
     {
         // This generated method automatically registers all repositories
@@ -193,7 +196,7 @@ public class CreateProductRequest : Request<CreateProductResponse>
 
     public override void ClearSensitiveProperties()
     {
-        // Automatically implemented if the class is partial and contains [SensitiveData]
+        // Manual override: a partial request can instead use the generated implementation.
     }
 }
 
@@ -202,6 +205,15 @@ public class CreateProductResponse : Response
     public Guid ProductId { get; set; }
 }
 ```
+
+#### Handler Errors, Cancellation, and Notifications
+
+Validation/execution exceptions reach `OnException` and produce a safe 500 message.
+Request cancellation propagates instead of becoming a 500 response. Concrete handlers
+should roll back with an uncancelled token and rethrow, rather than returning exception
+messages. Notifications are awaited after `OnAfterExecute`, only for 2xx responses,
+and cleared after each call. Delivery is best effort; handlers must commit before
+returning success. See [the handler templates](.skills/04-application-cqrs.md).
 
 #### Auditing Exclusions (`[LogIgnore]`)
 To prevent specific requests (e.g. high-frequency heartbeat ping calls or read-only queries) from producing audit logs in the database, annotate the request with the `[LogIgnore]` attribute:
@@ -248,6 +260,8 @@ namespace MyProject.Application;
 
 public static partial class ConfigureHandlerServices
 {
+    private static partial void ConfigureGenerated(IServiceCollection services);
+
     public static IServiceCollection ConfigureApplication(this IServiceCollection services)
     {
         // Automatically populated at compilation
@@ -280,7 +294,7 @@ public class User : Entity, ISecretHash
 
 #### Hashing credentials:
 ```csharp
-using SebastianGuzmanMorla.DDD.Domain.Cryptography;
+using SebastianGuzmanMorla.DDD;
 
 var user = new User
 {
@@ -294,7 +308,7 @@ await userRepository.Add(cancellationToken, user);
 
 #### Verifying credentials:
 ```csharp
-using SebastianGuzmanMorla.DDD.Domain.Extensions;
+using SebastianGuzmanMorla.DDD.Extensions;
 
 User? user = await userRepository.FirstOrDefault(email, cancellationToken);
 
@@ -360,9 +374,10 @@ public class CustomRequestBinder(IHttpContextAccessor httpContextAccessor)
 }
 ```
 
-The binding class is automatically registered by the source generator. Map it using the 3-parameter overload:
+Declare the registration marker in the binder project and call its wrapper (see [binder registration](.skills/19-custom-request-binders.md)). Map it using the overload with three generic type parameters:
 
 ```csharp
+var group = app.MapGroup("/prefix");
 group.MapRequest<MyCustomRequest, MyResponse, Response>(
     RequestMethod.Post,
     "/prefix",
@@ -372,14 +387,15 @@ group.MapRequest<MyCustomRequest, MyResponse, Response>(
 ```
 
 ##### File Responses (`ResponseFile`)
-Endpoints returning files should declare their request output as `ResponseFileByte` or `ResponseFilePath`. `MapRequest` will automatically handle binary responses via `Results.File`.
+Endpoints returning files should declare their request output as `ResponseFileByte` or `ResponseFilePath`. `MapRequest` streams `OK` responses via `Results.File`. Errors return base JSON containing status, message, errors, timestamp, and LogId, without file bytes or internal paths.
 
 #### B. Global Exception Handler (`ExceptionHandlerMiddleware`)
 A global exception middleware capturing runtime failures and generating appropriate HTTP statuses:
 
-- Captures database transaction issues or general exceptions (returns 500 Internal Server Error) and records an EF Core `Log` entity, outputting a JSON body with a unique `LogId` trace identifier.
+- Returns 500 with `Message = "Internal server error"` for unexpected exceptions. Attempts to persist an EF Core `Log` and includes its `LogId` only when persistence succeeds.
 - Captures `BadHttpRequestException` (returns 400 Bad Request).
-- Captures `TaskCanceledException` (returns 499 Client Closed Request).
+- Returns 499 for `OperationCanceledException` (including `TaskCanceledException`) only when `RequestAborted` is cancelled; server-side cancellation is handled as an error.
+- Rethrows the original exception if the response has already started.
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Infrastructure.Middleware;
@@ -414,7 +430,7 @@ app.MapCachedHealthChecks("/health"); // Maps check endpoint (defaults to /healt
 ```
 
 #### D. Smart Enum Authorization (`SmartEnumRequirement`)
-Enforces claim and scope check policies using Smart Enums flags:
+Checks all matching claims using Smart Enum flags. Missing or unrecognized claims grant no permissions. Keep authentication as a separate policy requirement:
 
 1. Add the policy handler:
 ```csharp
@@ -493,6 +509,43 @@ This repository includes a modular AI Agent Skill architecture (`SKILL.md` and 2
 - **.NET 9.0** or **.NET 10.0+**
 - **EF Core 9.0 / 10.0**
 - **FlexLabs.EntityFrameworkCore.Upsert** (for bulk upserts)
+
+## Tests
+
+Test projects follow the name of the library project they exercise, with a `.Tests`
+suffix. See [the test project map](tests/README.md) and
+[the testing skill](.skills/21-library-consumer-testing.md) for where to add new cases.
+
+Run the regression suite for .NET 9 and .NET 10 (SDK 10, both runtimes, and Docker required):
+
+```bash
+dotnet test SebastianGuzmanMorla.DDD.slnx -c Release
+# Or: make test
+
+# Without Docker
+make test-unit
+
+# Test the consumer with PostgreSQL and Redis containers
+make test-integration
+
+# Test locally packed NuGet libraries and their bundled generators
+make test-package
+```
+
+The suite covers secret hashing, transaction commit/rollback and disposal, repository
+mutations and soft-delete filters, cache consistency, and generated sensitive-data
+redaction, HTTP endpoints, authorization, cancellation, notifications, and exception
+auditing. There are 149 cases per framework, including 12 Testcontainers cases with
+real PostgreSQL and Redis. Focused tests use SQLite and NSubstitute; generator tests
+compile and execute emitted code with Roslyn. The package smoke test runs separately.
+
+[The consumer fixture](tests/Consumer/README.md) follows the DDD skills in separate
+Contracts, Domain, Infrastructure, and Application projects. Its tests exercise
+generated registrations, layered validation, handler workflows, pagination,
+UTC mappings, and JSON contexts through the library's public APIs.
+
+See [the review report](docs/TEST_REVIEW.md) for findings, compatibility notes, and
+remaining coverage opportunities.
 
 ## License
 
