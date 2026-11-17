@@ -20,9 +20,14 @@ public sealed class TestEntity : Entity
 
 public sealed class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(options)
 {
+    public string? VisibleName { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<TestEntity>();
+        modelBuilder.Entity<TestEntity>()
+            .HasQueryFilter(entity => VisibleName == null || entity.Name == VisibleName);
+        modelBuilder.Entity<SebastianGuzmanMorla.DDD.Domain.Entities.LogRequest>();
+        modelBuilder.Entity<SebastianGuzmanMorla.DDD.Domain.Entities.Log>();
     }
 }
 
@@ -42,7 +47,9 @@ internal sealed class DatabaseFixture : IAsyncDisposable
         Context = new TestDbContext(new DbContextOptionsBuilder<TestDbContext>().UseSqlite(_connection).Options);
         Context.Database.EnsureCreated();
         UnitOfWork = new UnitOfWork<TestDbContext>(Context);
-        IServiceCollection services = new ServiceCollection().AddSingleton<IUnitOfWork<TestDbContext>>(UnitOfWork);
+        IServiceCollection services = new ServiceCollection()
+            .AddSingleton(Context)
+            .AddSingleton<IUnitOfWork<TestDbContext>>(UnitOfWork);
         configure?.Invoke(services);
         Services = services.BuildServiceProvider();
         Repository = new TestRepository(Services);

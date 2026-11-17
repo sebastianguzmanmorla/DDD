@@ -223,11 +223,12 @@ public class UserRepository(
 ---
 
 ### B. Cached Repository (`CachedRepository<TContext, TEntity>`)
-Use this for read-heavy aggregates (configurations, reference catalogs, static parameters) that benefit from Redis caching.
+Use this for read-heavy aggregates with identical row and field visibility for every caller sharing the namespace, such as public reference catalogs. Leave shared caching disabled if access depends on the current tenant, principal, database policy, or other request context.
 
 * **Requirements**:
-  1. Specify `CacheKeyPrefix` (e.g. `"MyProject:customer"`).
-  2. Specify System.Text.Json `JsonTypeInfo<TEntity>` compilation metadata from `DomainJsonSerializerContext`.
+  1. Override `CacheHasUniformVisibility` only for visibility-invariant data.
+  2. Specify a fresh `CacheKeyPrefix` unique to the application, environment, database and entity type when enabling it after upgrading.
+  3. Specify System.Text.Json `JsonTypeInfo<TEntity>` compilation metadata from `DomainJsonSerializerContext`.
 
 ```csharp
 using System.Text.Json.Serialization.Metadata;
@@ -238,16 +239,17 @@ using SebastianGuzmanMorla.DDD.Infrastructure.Repositories;
 
 namespace MyProject.Infrastructure.Repositories;
 
-public class CustomerRepository(
+public class CatalogRepository(
     IServiceProvider serviceProvider
-) : CachedRepository<DatabaseContext, Customer>(serviceProvider), ICustomerRepository
+) : CachedRepository<DatabaseContext, CatalogItem>(serviceProvider), ICatalogRepository
 {
-    protected override string CacheKeyPrefix => "MyProject:customer";
+    protected override bool CacheHasUniformVisibility => true;
+    protected override string CacheKeyPrefix => "MyProject:production:catalog:item:v2";
 
     protected override TimeSpan CacheExpiry => TimeSpan.FromMinutes(15);
 
     // Link to System.Text.Json source generation metadata for reflection-free serialization
-    protected override JsonTypeInfo<Customer> JsonTypeInfo => DomainJsonSerializerContext.Default.Customer;
+    protected override JsonTypeInfo<CatalogItem> JsonTypeInfo => DomainJsonSerializerContext.Default.CatalogItem;
 }
 ```
 
@@ -259,7 +261,7 @@ public class CustomerRepository(
 - `Any(id)` and `FirstOrDefault(id)` bypass Redis while the UoW transaction is active.
   They query SQL; they do not expose changes EF has not yet sent to the database.
   Custom queries through `Queryable` do not use the ID cache.
-- After commit, `Add` populates cache entries. `Update`, `Upsert`, `SoftDelete`, and
+- When shared caching is enabled, `Add` populates entries for active rows after commit. `Update`, `Upsert`, `SoftDelete`, and
   `HardDelete` delete the exact affected ID keys, not wildcard patterns.
   Without a transaction, cache actions execute immediately after persistence.
 - Rollback or disposal of an active transaction clears tracked changes and pending

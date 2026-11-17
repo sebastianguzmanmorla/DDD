@@ -96,11 +96,7 @@ Base handlers inherit from `SebastianGuzmanMorla.DDD.Infrastructure.Handlers.Req
 ### Pre-injected Common Services & Properties
 * **`GeneralLocalization` (`IGeneralLocalization`)**: Pre-injected for standardized localized message strings.
 * **`IdentityContext` (`IIdentityContext`)**: Pre-injected for caller security claims (`UserId`, `OrganizationId`, `ClientId`, `DeviceId`).
-* **`LogRequestId` (`Guid.CreateVersion7()`)**: Pre-generated sequential GUID v7 tracing ID. Mutation handlers can pass this ID to background tasks or external message queues before execution finishes.
-* **Audit Helpers**:
-  * `AddEntityLog(LogType.Put, entity, "Log text")`: Logs entity state mutations (`LogType.Put` for Create/Update, `LogType.Delete` for Soft Delete).
-  * `AddLog(LogType.Information, "Log text")`: Logs general information or non-entity operational events.
-  * `AddLog(LogType.Error, ex.ToString())`: Logs exceptions.
+* **`StageMutationAudit`**: Adds redacted request and entity audit records to the mutation's transaction and returns a new correlation ID. Return that ID to the caller after the commit succeeds.
 
 ### Base Handler Implementation Template
 
@@ -108,7 +104,6 @@ Base handlers inherit from `SebastianGuzmanMorla.DDD.Infrastructure.Handlers.Req
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using SebastianGuzmanMorla.DDD.Domain.Attributes;
 using SebastianGuzmanMorla.DDD.Domain.Entities;
 using SebastianGuzmanMorla.DDD.Domain.Interfaces;
 using SebastianGuzmanMorla.DDD.Domain.Interfaces.Repositories;
@@ -133,81 +128,26 @@ public abstract class RequestHandler<TRequest, TResponse>(
     private readonly ILogRepository _logRepository = serviceProvider.GetRequiredService<ILogRepository>();
     private readonly ILogRequestRepository _logRequestRepository = serviceProvider.GetRequiredService<ILogRequestRepository>();
 
-    private readonly List<INotificationLog> _logs = [];
-
-    protected Guid LogRequestId { get; } = Guid.CreateVersion7();
-
-    protected override async Task OnException(TRequest request, Exception exception, CancellationToken cancellationToken = default)
+    protected async Task<Guid> StageMutationAudit<TEntity>(
+        TRequest request, TEntity entity, LogType type, string message, CancellationToken cancellationToken)
+        where TEntity : Entity
     {
-        AddLog(LogType.Error, exception.ToString());
-        await Task.CompletedTask;
-    }
-
-    protected override async Task OnAfterExecute(TRequest request, TResponse response, CancellationToken cancellationToken = default)
-    {
-        bool logIgnore = request.GetType().GetCustomAttributes(typeof(LogIgnoreAttribute), true).Length != 0;
-        bool logError = _logs.Any(x => x.Type == LogType.Error);
-
-        if (!logError && (_logs.Count == 0 || logIgnore)) return;
-
-        await using (UnitOfWork)
+        if (!UnitOfWork.TransactionEnabled)
         {
-            try
-            {
-                await UnitOfWork.CreateTransaction(cancellationToken);
-
-                LogRequest logRequest = request.ToLogEntity(IdentityContext, _jsonSerializerOptions, LogRequestId);
-                await _logRequestRepository.Add(cancellationToken, logRequest);
-
-                List<Log> logEntries = _logs
-                    .Select(x => x.ToLogEntity(_jsonSerializerOptions, logRequest.Id))
-                    .ToList();
-
-                await _logRepository.Add(cancellationToken, logEntries);
-                await UnitOfWork.Commit(cancellationToken);
-                response.LogId = logRequest.Id;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                await UnitOfWork.Rollback(CancellationToken.None);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                AddLog(LogType.Error, ex.ToString());
-                await UnitOfWork.Rollback(CancellationToken.None);
-            }
+            throw new InvalidOperationException("Mutation audit requires an active transaction.");
         }
-    }
 
-    protected void AddEntityLog<TEntity>(LogType logType, TEntity entity, string logText = "") where TEntity : Entity
-    {
-        _logs.Add(new NotificationLog<TEntity>
+        LogRequest logRequest = request.ToLogEntity(IdentityContext, _jsonSerializerOptions, Guid.CreateVersion7());
+        await _logRequestRepository.Add(cancellationToken, logRequest);
+
+        Log entry = new NotificationLog<TEntity>
         {
             ReferenceId = entity.Id,
-            ReferenceData = entity,
-            Type = logType,
-            Message = logText
-        });
-    }
-
-    protected void AddLog<TData>(LogType logType, TData data, string logText = "")
-    {
-        _logs.Add(new NotificationLog<TData>
-        {
-            ReferenceData = data,
-            Type = logType,
-            Message = logText
-        });
-    }
-
-    protected void AddLog(LogType logType, string logText)
-    {
-        _logs.Add(new NotificationLog<TRequest>
-        {
-            Type = logType,
-            Message = logText
-        });
+            Type = type,
+            Message = message
+        }.ToLogEntity(_jsonSerializerOptions, logRequest.Id);
+        await _logRepository.Add(cancellationToken, entry);
+        return logRequest.Id;
     }
 }
 ```
@@ -233,12 +173,11 @@ public class CreateSampleRequestHandler(
 
             // Add entity via Repository
             await sampleRepository.Add(cancellationToken, entity);
-            
+            Guid logId = await StageMutationAudit(request, entity, LogType.Put, "Created sample entity", cancellationToken);
+
             await UnitOfWork.Commit(cancellationToken);
 
-            AddEntityLog(LogType.Put, entity, "Created sample entity");
-
-            return new CreateSampleResponse { Id = entity.Id };
+            return new CreateSampleResponse { Id = entity.Id, LogId = logId };
         }
         catch
         {
@@ -270,12 +209,11 @@ public class UpdateSampleRequestHandler(
 
             // Persist mutation via Repository.Update (automatically sets UpdatedAt = DateTime.UtcNow)
             await sampleRepository.Update(cancellationToken, entity);
+            Guid logId = await StageMutationAudit(request, entity, LogType.Put, "Updated sample entity", cancellationToken);
 
             await UnitOfWork.Commit(cancellationToken);
 
-            AddEntityLog(LogType.Put, entity, "Updated sample entity");
-
-            return new Response();
+            return new Response { LogId = logId };
         }
         catch
         {
@@ -304,12 +242,11 @@ public class DeleteSampleRequestHandler(
 
             // Execute Soft Delete via Repository (automatically sets DeletedAt = DateTime.UtcNow)
             await sampleRepository.SoftDelete(cancellationToken, entity);
+            Guid logId = await StageMutationAudit(request, entity, LogType.Delete, "Soft-deleted sample entity", cancellationToken);
 
             await UnitOfWork.Commit(cancellationToken);
 
-            AddEntityLog(LogType.Delete, entity, "Soft-deleted sample entity");
-
-            return new Response();
+            return new Response { LogId = logId };
         }
         catch
         {
@@ -347,7 +284,7 @@ public abstract class CustomerHandler<TRequest, TResponse>(
 The base `RequestHandler` automatically manages the request execution lifecycle:
 1. **Automated Request Validation**: Before executing the handler, it resolves `IValidator<TRequest>` from the DI container (if registered). If validation fails, it halts execution and automatically returns a `400 BadRequest` response containing the collection of validation errors.
 2. **Execute**: Calls your overridden `Execute(TRequest request, CancellationToken cancellationToken)`.
-3. **OnAfterExecute**: Lifecycle hook executing post-operations (such as saving audit `LogRequest` and entity `Log` records inside a UoW transaction).
+3. **OnAfterExecute**: Lifecycle hook for work independent of the mutation. Stage the mutation's audit records inside `Execute`, before its commit.
 4. **Notification Dispatch**: Dispatches queued notifications only for a 2xx response, after `OnAfterExecute`. The queue is cleared in `finally`, including on failure and cancellation.
 
 Validation/execution exceptions reach `OnException` and return a 500 response with
@@ -421,6 +358,7 @@ AddNotification(new WelcomeNotification { Email = request.Email });
 
 For listing and searching data, use `RequestPageHandler<TContext, TRequest, TResponse, TEntity, TResponseEntity>`.
 * **Note**: `RequestPageHandler` automatically filters out soft-deleted entities (`DeletedAt == null`) and performs asynchronous `CountAsync()`, `Skip()`, and `Take()` pagination.
+* The handler defaults to page 1 and size 10. It returns `400 Bad Request` before querying for sizes outside 1–100 or offsets above 100,000. `Total` and `Pages` describe the full result set. Use cursor pagination for deeper traversal.
 
 ### 1. Paginated Request & Response
 ```csharp

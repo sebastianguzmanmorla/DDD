@@ -1,21 +1,42 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
-using SebastianGuzmanMorla.DDD.Domain.Models;
 using SebastianGuzmanMorla.DDD.Domain.Options;
-using SebastianGuzmanMorla.DDD.Infrastructure.Services;
 using StackExchange.Redis;
 
 namespace SebastianGuzmanMorla.DDD.Infrastructure.Extensions;
 
 public static class HealthCheckExtensions
 {
+    private static readonly string DefaultReportKey = new CachedHealthCheckOptions().RedisKey;
+
     public static IEndpointConventionBuilder MapCachedHealthChecks(this IEndpointRouteBuilder endpoints, string pattern = "/health")
+        => MapCachedHealthChecks(endpoints, pattern, includeDetails: false);
+
+    public static IEndpointConventionBuilder MapDetailedCachedHealthChecks(
+        this IEndpointRouteBuilder endpoints, string authorizationPolicy, string pattern = "/health/details")
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(authorizationPolicy);
+        IEndpointConventionBuilder builder = MapCachedHealthChecks(endpoints, pattern, includeDetails: true)
+            .RequireAuthorization(authorizationPolicy)
+            .RequireAuthorization(policy => policy.RequireAuthenticatedUser());
+        builder.Finally(endpoint =>
+        {
+            if (endpoint.Metadata.OfType<IAllowAnonymous>().Any())
+            {
+                throw new InvalidOperationException("Detailed cached health checks require authorization.");
+            }
+        });
+        return builder;
+    }
+
+    private static IEndpointConventionBuilder MapCachedHealthChecks(
+        IEndpointRouteBuilder endpoints, string pattern, bool includeDetails)
     {
         return endpoints.MapHealthChecks(pattern, new HealthCheckOptions
         {
@@ -23,50 +44,39 @@ public static class HealthCheckExtensions
             ResponseWriter = async (context, _) =>
             {
                 string? json = null;
-                
+                string? status = null;
+
                 try
                 {
-                    IConnectionMultiplexer redis = context.RequestServices.GetRequiredService<IConnectionMultiplexer>();
-                    IDatabase db = redis.GetDatabase();
-
                     CachedHealthCheckOptions healthCheckOptions = context.RequestServices.GetRequiredService<IOptions<CachedHealthCheckOptions>>().Value;
-                    RedisValue value = await db.StringGetAsync(healthCheckOptions.RedisKey);
-                    json = value.ToString();
-                }
-                catch (Exception)
-                {
-                    // ignored
-                }
-
-                if (string.IsNullOrEmpty(json))
-                {
-                    try
+                    if (!includeDetails || !string.Equals(healthCheckOptions.RedisKey, DefaultReportKey, StringComparison.Ordinal))
                     {
-                        HealthCheckService healthCheckService = context.RequestServices.GetRequiredService<HealthCheckService>();
-                        HealthReport liveReport = await healthCheckService.CheckHealthAsync(context.RequestAborted);
-                        HealthCheckReportModel model = CachedHealthCheckService.FromHealthReport(liveReport);
-
-                        JsonSerializerOptions? jsonOptions = context.RequestServices.GetService<JsonSerializerOptions>();
-                        json = jsonOptions is not null
-                            ? JsonSerializer.Serialize(model, jsonOptions)
-                            : JsonSerializer.Serialize(model);
+                        IConnectionMultiplexer redis = context.RequestServices.GetRequiredService<IConnectionMultiplexer>();
+                        RedisValue value = await redis.GetDatabase().StringGetAsync(healthCheckOptions.RedisKey);
+                        json = value.ToString();
                     }
-                    catch (Exception)
+
+                    if (!string.IsNullOrEmpty(json))
                     {
-                        // ignored
+                        using JsonDocument report = JsonDocument.Parse(json);
+                        JsonElement root = report.RootElement;
+
+                        if (root.ValueKind == JsonValueKind.Object &&
+                            (root.TryGetProperty("status", out JsonElement statusValue) ||
+                             root.TryGetProperty("Status", out statusValue)) &&
+                            statusValue.ValueKind == JsonValueKind.String)
+                        {
+                            status = statusValue.GetString();
+                        }
                     }
                 }
-
-                if (string.IsNullOrEmpty(json))
+                catch (Exception ex) when (ex is RedisException or RedisCommandException or TimeoutException or
+                    JsonException or InvalidOperationException)
                 {
-                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    await context.Response.WriteAsync("Health check report unavailable from cache or live checks.");
-                    return;
+                    // Cache failures are unavailable readiness, not a signal to run probes on request threads.
                 }
 
-                HealthCheckReportModel? report = JsonSerializer.Deserialize<HealthCheckReportModel>(json);
-
-                context.Response.StatusCode = report?.Status switch
+                context.Response.StatusCode = status switch
                 {
                     "Healthy" => StatusCodes.Status200OK,
                     "Degraded" => StatusCodes.Status429TooManyRequests,
@@ -74,7 +84,20 @@ public static class HealthCheckExtensions
                 };
 
                 context.Response.ContentType = "application/json";
-                await context.Response.WriteAsync(json);
+                if (includeDetails && status is ("Healthy" or "Degraded" or "Unhealthy"))
+                {
+                    await context.Response.WriteAsync(json!, context.RequestAborted);
+                    return;
+                }
+
+                string body = status switch
+                {
+                    "Healthy" => """{"status":"Healthy"}""",
+                    "Degraded" => """{"status":"Degraded"}""",
+                    "Unhealthy" => """{"status":"Unhealthy"}""",
+                    _ => """{"status":"Unavailable"}"""
+                };
+                await context.Response.WriteAsync(body, context.RequestAborted);
             }
         });
     }

@@ -1,9 +1,60 @@
 using Microsoft.EntityFrameworkCore;
+using SebastianGuzmanMorla.DDD.Domain.Entities;
 
 namespace SebastianGuzmanMorla.DDD.Infrastructure.Tests;
 
 public class UnitOfWorkTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MutationAndAuditRowsCommitOrRollbackTogether(bool failAuditWrite)
+    {
+        await using var db = new DatabaseFixture();
+        await db.UnitOfWork.CreateTransaction();
+        var entity = new TestEntity();
+        await db.Repository.Add(default, entity);
+        var audit = new LogRequest { Type = failAuditWrite ? null! : "TestRequest", Request = "{}" };
+        db.Context.Add(audit);
+        db.Context.Add(new Log { LogRequestId = audit.Id, ReferenceId = entity.Id });
+
+        if (failAuditWrite)
+        {
+            await Assert.ThrowsAsync<DbUpdateException>(() => db.UnitOfWork.Commit());
+            await db.UnitOfWork.Rollback();
+        }
+        else
+        {
+            await db.UnitOfWork.Commit();
+        }
+
+        int expectedCount = failAuditWrite ? 0 : 1;
+        Assert.Equal(expectedCount, await db.Repository.Count());
+        Assert.Equal(expectedCount, await db.Context.Set<LogRequest>().CountAsync());
+        Assert.Equal(expectedCount, await db.Context.Set<Log>().CountAsync());
+    }
+
+    [Fact]
+    public async Task CancellationBeforeCommitLeavesNeitherMutationNorAuditRows()
+    {
+        await using var db = new DatabaseFixture();
+        await db.UnitOfWork.CreateTransaction();
+        var entity = new TestEntity();
+        await db.Repository.Add(default, entity);
+        var audit = new LogRequest { Type = "TestRequest", Request = "{}" };
+        db.Context.Add(audit);
+        db.Context.Add(new Log { LogRequestId = audit.Id, ReferenceId = entity.Id });
+        using var request = new CancellationTokenSource();
+        await request.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => db.UnitOfWork.Commit(request.Token));
+        await db.UnitOfWork.Rollback(CancellationToken.None);
+
+        Assert.Equal(0, await db.Repository.Count());
+        Assert.Empty(await db.Context.Set<LogRequest>().ToListAsync());
+        Assert.Empty(await db.Context.Set<Log>().ToListAsync());
+    }
+
     [Fact]
     public async Task Commit_PersistsChangesBeforeCallbacksAndClearsTracking()
     {

@@ -68,6 +68,7 @@ internal sealed class CachedCustomerRepository(IServiceProvider services)
     : CachedRepository<DatabaseContext, Customer>(services), ICustomerRepository
 {
     public static string Key(Guid id) => $"consumer:customers:{id}";
+    protected override bool CacheHasUniformVisibility => true;
     protected override string CacheKeyPrefix => "consumer:customers";
     protected override JsonTypeInfo<Customer> JsonTypeInfo => DomainJsonSerializerContext.Default.Customer;
     public Task<bool> NameExists(string name, CancellationToken cancellationToken = default) =>

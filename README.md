@@ -9,7 +9,7 @@ A base library for implementing **Domain-Driven Design (DDD)** in .NET 9.0 and .
   - Generic, extensible implementation on top of **Entity Framework Core**.
   - Transactional support and automatic or controlled saving (`UnitOfWork`).
   - Built-in repository mutation methods: `Add`, `Update`, `SoftDelete`, `Upsert`, and `HardDelete`.
-  - Automatic cache decoration via Redis (`CachedRepository`).
+  - Opt-in Redis caching for entities with uniform visibility (`CachedRepository`).
 - **UTC DateTime Value Converters**:
   - Native EF Core `UtcDateTimeConverter` and `NullableUtcDateTimeConverter` in `SebastianGuzmanMorla.DDD.Infrastructure.Converters` to enforce UTC Kind compatibility with PostgreSQL.
 - **CQS Messaging Architecture**:
@@ -111,11 +111,13 @@ All derived repositories inherit built-in mutation methods:
 - `await repository.HardDelete(cancellationToken, product);` (bulk SQL delete execution by ID)
 
 #### Redis Cached Repository (`CachedRepository`)
-To enable automatic caching on Redis for your entity repository, inherit from `CachedRepository<TContext, TEntity>` instead of `Repository`:
+For entities with the same row and field visibility for every caller, inherit from `CachedRepository<TContext, TEntity>` and override `CacheHasUniformVisibility` to opt into shared Redis caching. Existing subclasses use database reads and writes until they opt in. Keep database reads for tenant or user filters, database row-level security, and other caller-dependent visibility.
+
+`CachedRepository` retains its Redis DI dependency. Apps without a Redis registration can use `Repository<TContext, TEntity>` directly.
 
 - `Any(id)` and `FirstOrDefault(id)` use Redis outside UoW transactions and query SQL directly inside them.
 - Registers post-commit actions to invalidate or refresh cache entries during write operations (`Update`, `Upsert`, `SoftDelete`, `HardDelete`).
-- Define `CacheKeyPrefix` and `JsonTypeInfo`; optionally override `CacheExpiry` (10 minutes by default).
+- Use a fresh `CacheKeyPrefix` unique to the application, environment, database and entity type when opting in after upgrading. Define `JsonTypeInfo` and optionally override `CacheExpiry` (10 minutes by default).
 - Rollback/disposal clears pending changes and callbacks. Cache callback failures after commit do not undo database writes; Redis remains eventually consistent. See [transaction/cache semantics](.skills/05-infrastructure-persistence.md).
 
 ```csharp
@@ -125,7 +127,8 @@ using System.Text.Json.Serialization.Metadata;
 public class ProductRepository(IServiceProvider serviceProvider) 
     : CachedRepository<MyDbContext, Product>(serviceProvider), IProductRepository
 {
-    protected override string CacheKeyPrefix => "Product";
+    protected override bool CacheHasUniformVisibility => true;
+    protected override string CacheKeyPrefix => "MyProject:production:catalog:product:v2";
     
     protected override TimeSpan CacheExpiry => TimeSpan.FromMinutes(15);
     
@@ -216,7 +219,7 @@ and cleared after each call. Delivery is best effort; handlers must commit befor
 returning success. See [the handler templates](.skills/04-application-cqrs.md).
 
 #### Auditing Exclusions (`[LogIgnore]`)
-To prevent specific requests (e.g. high-frequency heartbeat ping calls or read-only queries) from producing audit logs in the database, annotate the request with the `[LogIgnore]` attribute:
+Applications can honor `[LogIgnore]` in separate logging for high-frequency probes and read-only queries. Required mutation audit records belong in the mutation transaction.
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Domain.Attributes;
@@ -405,7 +408,7 @@ app.UseMiddleware<ExceptionHandlerMiddleware<MyDbContext>>();
 ```
 
 #### C. Redis-Cached Health Checks (`MapCachedHealthChecks`)
-Optimizes system health checks by executing checks in a background hosted service and storing the results in Redis, preventing database spikes under intensive health checks:
+The background service runs checks and stores the report in Redis. The public endpoint serves aggregate status and returns `503` when the cached report is missing, invalid, or unavailable. Probes never trigger live dependency checks.
 
 1. Configure settings in DI:
 ```csharp
@@ -428,6 +431,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<CachedHealthCheckS
 
 app.MapCachedHealthChecks("/health"); // Maps check endpoint (defaults to /health)
 ```
+
+Use per-application and per-environment Redis keys. Consumers that need the previous detailed report can migrate to `app.MapDetailedCachedHealthChecks("HealthDiagnostics")` with a named policy for authorized operators.
 
 #### D. Smart Enum Authorization (`SmartEnumRequirement`)
 Checks all matching claims using Smart Enum flags. Missing or unrecognized claims grant no permissions. Keep authentication as a separate policy requirement:
@@ -535,7 +540,7 @@ make test-package
 The suite covers secret hashing, transaction commit/rollback and disposal, repository
 mutations and soft-delete filters, cache consistency, and generated sensitive-data
 redaction, HTTP endpoints, authorization, cancellation, notifications, and exception
-auditing. There are 149 cases per framework, including 12 Testcontainers cases with
+auditing. There are 180 cases per framework, including 12 Testcontainers cases with
 real PostgreSQL and Redis. Focused tests use SQLite and NSubstitute; generator tests
 compile and execute emitted code with Roslyn. The package smoke test runs separately.
 
@@ -546,6 +551,10 @@ UTC mappings, and JSON contexts through the library's public APIs.
 
 See [the review report](docs/TEST_REVIEW.md) for findings, compatibility notes, and
 remaining coverage opportunities.
+
+## Package publishing
+
+Configure the API key for the selected source in the release runner's NuGet settings, or inject `NUGET_API_KEY` through the runner's secret store with a client that supports it (NuGet 7.6 or later). The `make push` target lets NuGet resolve the key. The previous `.env` / `API_KEY` publishing convention is retired.
 
 ## License
 

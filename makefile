@@ -1,8 +1,3 @@
-# Load variables from .env if it exists
-ifneq ("$(wildcard .env)","")
-    include .env
-endif
-
 # Variables
 PROJECT_PATH=src/SebastianGuzmanMorla.DDD/SebastianGuzmanMorla.DDD.csproj
 INFRASTRUCTURE_PROJECT_PATH=src/SebastianGuzmanMorla.DDD.Infrastructure/SebastianGuzmanMorla.DDD.Infrastructure.csproj
@@ -17,12 +12,7 @@ else
     RM_DIR = rm -rf $(PACK_OUTPUT)
 endif
 
-.PHONY: clean pack push check-env test test-unit test-integration test-package
-
-check-env:
-ifndef API_KEY
-	$(error API_KEY not found. Make sure your .env file contains API_KEY=xxx)
-endif
+.PHONY: clean pack push test test-unit test-integration test-package
 
 clean:
 	@echo "Cleaning binaries..."
@@ -55,9 +45,8 @@ pack: clean build
 	@dotnet pack $(PROJECT_PATH) -c Release -o $(PACK_OUTPUT)
 	@dotnet pack $(INFRASTRUCTURE_PROJECT_PATH) -c Release -o $(PACK_OUTPUT)
 
-push: check-env pack
+push: pack
 	@echo "Publishing to NuGet..."
 	@dotnet nuget push $(PACK_OUTPUT)/*.nupkg \
-		--api-key $(API_KEY) \
 		--source $(NUGET_SOURCE) \
 		--skip-duplicate

@@ -10,11 +10,16 @@ namespace SebastianGuzmanMorla.DDD.Infrastructure.Tests;
 
 public class CachedRepositoryTests
 {
-    private sealed class CachedTestRepository(IServiceProvider services) : CachedRepository<TestDbContext, TestEntity>(services)
+    private class CachedTestRepository(IServiceProvider services) : CachedRepository<TestDbContext, TestEntity>(services)
     {
         protected override string CacheKeyPrefix => "tests";
         protected override JsonTypeInfo<TestEntity> JsonTypeInfo =>
             TestJsonSerializerContext.Default.TestEntity;
+    }
+
+    private sealed class SharedCachedTestRepository(IServiceProvider services) : CachedTestRepository(services)
+    {
+        protected override bool CacheHasUniformVisibility => true;
     }
 
     private sealed class CacheFixture : IAsyncDisposable
@@ -23,15 +28,72 @@ public class CachedRepositoryTests
         public DatabaseFixture Db { get; }
         public CachedTestRepository Repository { get; }
 
-        public CacheFixture()
+        public CacheFixture(bool enableSharedCache = true)
         {
             IConnectionMultiplexer redis = Substitute.For<IConnectionMultiplexer>();
             redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(Cache);
             Db = new DatabaseFixture(services => services.AddSingleton(redis));
-            Repository = new CachedTestRepository(Db.Services);
+            Repository = enableSharedCache
+                ? new SharedCachedTestRepository(Db.Services)
+                : new CachedTestRepository(Db.Services);
         }
 
         public ValueTask DisposeAsync() => Db.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DefaultReadsHonorDatabaseVisibilityWithAPopulatedSharedCache()
+    {
+        await using var fixture = new CacheFixture(enableSharedCache: false);
+        var entity = new TestEntity("visible to first scope");
+        await fixture.Db.Repository.Add(default, entity);
+        fixture.Cache.StringGetAsync((RedisKey)$"tests:{entity.Id}", Arg.Any<CommandFlags>())
+            .Returns((RedisValue)JsonSerializer.Serialize(entity, TestJsonSerializerContext.Default.TestEntity));
+        fixture.Cache.KeyExistsAsync((RedisKey)$"tests:{entity.Id}", Arg.Any<CommandFlags>()).Returns(true);
+        fixture.Cache.ClearReceivedCalls();
+
+        fixture.Db.Context.VisibleName = entity.Name;
+        Assert.True(await fixture.Repository.Any(entity.Id));
+        Assert.Equal(entity.Id, (await fixture.Repository.FirstOrDefault(entity.Id))?.Id);
+
+        fixture.Db.Context.VisibleName = "a different scope";
+        Assert.False(await fixture.Repository.Any(entity.Id));
+        Assert.Null(await fixture.Repository.FirstOrDefault(entity.Id));
+        await fixture.Repository.Add(default, new TestEntity());
+        Assert.Empty(fixture.Cache.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task SharedCacheDoesNotReturnOrPopulateSoftDeletedEntities()
+    {
+        await using var fixture = new CacheFixture();
+        var entity = new TestEntity { DeletedAt = DateTime.UtcNow };
+        RedisKey key = $"tests:{entity.Id}";
+        fixture.Cache.StringGetAsync(key, Arg.Any<CommandFlags>())
+            .Returns((RedisValue)JsonSerializer.Serialize(entity, TestJsonSerializerContext.Default.TestEntity));
+
+        await fixture.Repository.Add(default, entity);
+
+        Assert.False(await fixture.Repository.Any(entity.Id));
+        Assert.Null(await fixture.Repository.FirstOrDefault(entity.Id));
+        await fixture.Cache.Received(1).KeyDeleteAsync(key);
+        Assert.DoesNotContain(fixture.Cache.ReceivedCalls(), call => call.GetMethodInfo().Name == "StringSetAsync");
+    }
+
+    [Fact]
+    public async Task SharedCacheAddOnlyPopulatesRowsVisibleToTheBackingQuery()
+    {
+        await using var fixture = new CacheFixture();
+        fixture.Db.Context.VisibleName = "published fixture";
+        var visible = new TestEntity("published fixture");
+        var excluded = new TestEntity("excluded fixture");
+
+        await fixture.Repository.Add(default, visible, excluded);
+
+        ICall write = Assert.Single(fixture.Cache.ReceivedCalls(), call => call.GetMethodInfo().Name == "StringSetAsync");
+        Assert.Equal($"tests:{visible.Id}", write.GetArguments()[0]!.ToString());
+        Assert.False(await fixture.Repository.Any(excluded.Id));
+        Assert.Null(await fixture.Repository.FirstOrDefault(excluded.Id));
     }
 
     [Fact]
@@ -81,7 +143,7 @@ public class CachedRepositoryTests
         await fixture.Repository.HardDelete(default, entity);
 
         Assert.False(await fixture.Repository.Any(entity.Id));
-        Assert.DoesNotContain(fixture.Cache.ReceivedCalls(), i => i.GetMethodInfo().Name == "KeyExistsAsync");
+        Assert.DoesNotContain(fixture.Cache.ReceivedCalls(), i => i.GetMethodInfo().Name == "StringGetAsync");
     }
 
     [Fact]

@@ -11,6 +11,16 @@ namespace SebastianGuzmanMorla.DDD.Domain.Generator;
 [Generator]
 public sealed class ClearSensitivePropertiesGenerator : IIncrementalGenerator
 {
+    private const string GeneratorName = "SebastianGuzmanMorla.DDD.Domain.Generator.ClearSensitivePropertiesGenerator";
+
+    private static readonly DiagnosticDescriptor UnclearableSensitiveProperty = new(
+        "DDD001",
+        "Sensitive property cannot be cleared",
+        "Generated cleanup for '{0}' cannot clear sensitive property '{1}'; provide a cleanup override that clears it",
+        "Security",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         IncrementalValuesProvider<ClassDeclarationSyntax> classDeclarations =
@@ -67,21 +77,40 @@ public sealed class ClearSensitivePropertiesGenerator : IIncrementalGenerator
             // Only generate if it doesn't already have an implementation
             if (classSymbol.GetMembers("ClearSensitiveProperties").Any(m => m is IMethodSymbol
                 {
-                    IsOverride: true, IsImplicitlyDeclared: false
+                    IsOverride: true, IsImplicitlyDeclared: false, Arity: 0, Parameters.Length: 0
                 }))
             {
                 continue;
             }
 
+            var (baseCleanup, baseCleanupVerified) = FindBaseCleanup(classSymbol, requestSymbol);
             List<IPropertySymbol> sensitiveProperties = new();
+            HashSet<IPropertySymbol> selectedProperties = new(SymbolEqualityComparer.Default);
             for (INamedTypeSymbol? current = classSymbol; current is not null; current = current.BaseType)
             {
-                sensitiveProperties.AddRange(current.GetMembers().OfType<IPropertySymbol>()
-                    .Where(p => p.GetAttributes().Any(a =>
-                        SymbolEqualityComparer.Default.Equals(a.AttributeClass, sensitiveAttributeSymbol)))
-                    .Where(p => SymbolEqualityComparer.Default.Equals(current, classSymbol) ||
-                        (p.SetMethod is not null && compilation.IsSymbolAccessibleWithin(p, classSymbol) &&
-                         compilation.IsSymbolAccessibleWithin(p.SetMethod, classSymbol))));
+                foreach (IPropertySymbol property in current.GetMembers().OfType<IPropertySymbol>())
+                {
+                    if (!property.GetAttributes().Any(attribute =>
+                            SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, sensitiveAttributeSymbol)))
+                    {
+                        continue;
+                    }
+
+                    IPropertySymbol effectiveProperty = FindEffectiveProperty(property, classSymbol);
+                    if (CanAssign(effectiveProperty, classSymbol, compilation))
+                    {
+                        if (selectedProperties.Add(effectiveProperty)) sensitiveProperties.Add(effectiveProperty);
+                    }
+                    else if (!baseCleanupVerified || baseCleanup is null ||
+                             (!SymbolEqualityComparer.Default.Equals(baseCleanup, effectiveProperty.ContainingType) &&
+                              !InheritsFrom(baseCleanup, effectiveProperty.ContainingType)))
+                    {
+                        Location location = property.Locations.FirstOrDefault(candidate => candidate.IsInSource)
+                                            ?? classDeclaration.Identifier.GetLocation();
+                        context.ReportDiagnostic(Diagnostic.Create(UnclearableSensitiveProperty, location,
+                            classSymbol.ToDisplayString(), property.ToDisplayString()));
+                    }
+                }
             }
 
             StringBuilder sb = new();
@@ -106,26 +135,12 @@ public sealed class ClearSensitivePropertiesGenerator : IIncrementalGenerator
                 sb.AppendLine($"{declaration.Modifiers} {keyword} @{type.Name}{declaration.TypeParameterList}");
                 sb.AppendLine("{");
             }
+            sb.AppendLine($"    [global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"{GeneratorName}\", \"2\")]");
             sb.AppendLine("    public override void ClearSensitiveProperties()");
             sb.AppendLine("    {");
 
             // Preserve custom redaction in a base class, including its private state.
-            for (INamedTypeSymbol? current = classSymbol.BaseType; current is not null; current = current.BaseType)
-            {
-                IMethodSymbol? method = current.GetMembers("ClearSensitiveProperties")
-                    .OfType<IMethodSymbol>().FirstOrDefault(m => !m.IsStatic && m.Parameters.Length == 0);
-                if (method is null && !current.IsAbstract && InheritsFrom(current, requestSymbol) &&
-                    current.DeclaringSyntaxReferences.Any(r => r.GetSyntax() is ClassDeclarationSyntax c &&
-                        c.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))))
-                {
-                    // The base implementation is emitted in this same generator run.
-                    sb.AppendLine("        base.ClearSensitiveProperties();");
-                    break;
-                }
-                if (method is null) continue;
-                if (!method.IsAbstract) sb.AppendLine("        base.ClearSensitiveProperties();");
-                break;
-            }
+            if (baseCleanup is not null) sb.AppendLine("        base.ClearSensitiveProperties();");
 
             foreach (IPropertySymbol prop in sensitiveProperties)
             {
@@ -137,8 +152,7 @@ public sealed class ClearSensitivePropertiesGenerator : IIncrementalGenerator
                 else if (!SymbolEqualityComparer.Default.Equals(prop.ContainingType, classSymbol))
                 {
                     // A derived property may hide a public sensitive property with the same name.
-                    receiver = prop.DeclaredAccessibility == Accessibility.Public &&
-                               prop.SetMethod?.DeclaredAccessibility == Accessibility.Public
+                    receiver = UsesDeclaringTypeReceiver(prop)
                         ? $"(({prop.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})this)"
                         : "base";
                 }
@@ -154,6 +168,98 @@ public sealed class ClearSensitivePropertiesGenerator : IIncrementalGenerator
             string hint = System.BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(identity))).Replace("-", "");
             context.AddSource($"{hint}.ClearSensitiveProperties.g.cs", sb.ToString());
         }
+    }
+
+    private static bool CanAssign(IPropertySymbol property, INamedTypeSymbol target, Compilation compilation)
+    {
+        if (property.SetMethod is not { IsInitOnly: false } setter || property.IsIndexer ||
+            !property.ExplicitInterfaceImplementations.IsEmpty ||
+            !compilation.IsSymbolAccessibleWithin(property, target) ||
+            !compilation.IsSymbolAccessibleWithin(setter, target))
+        {
+            return false;
+        }
+
+        if (property.IsStatic || UsesDeclaringTypeReceiver(property) ||
+            SymbolEqualityComparer.Default.Equals(target, property.ContainingType))
+        {
+            return true;
+        }
+
+        // The base-qualified member must not resolve to a different property in the hierarchy.
+        for (INamedTypeSymbol? current = target.BaseType; current is not null &&
+             !SymbolEqualityComparer.Default.Equals(current, property.ContainingType); current = current.BaseType)
+        {
+            foreach (ISymbol member in current.GetMembers(property.Name))
+            {
+                if (compilation.IsSymbolAccessibleWithin(member, target) &&
+                    (member is not IPropertySymbol candidate || !Overrides(candidate, property)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool UsesDeclaringTypeReceiver(IPropertySymbol property) =>
+        property.DeclaredAccessibility == Accessibility.Public &&
+        property.SetMethod?.DeclaredAccessibility == Accessibility.Public;
+
+    private static IPropertySymbol FindEffectiveProperty(IPropertySymbol property, INamedTypeSymbol target)
+    {
+        for (INamedTypeSymbol? current = target; current is not null &&
+             !SymbolEqualityComparer.Default.Equals(current, property.ContainingType); current = current.BaseType)
+        {
+            IPropertySymbol? candidate = current.GetMembers(property.Name).OfType<IPropertySymbol>()
+                .FirstOrDefault(member => Overrides(member, property));
+            if (candidate is not null) return candidate;
+        }
+
+        return property;
+    }
+
+    private static bool Overrides(IPropertySymbol candidate, IPropertySymbol property)
+    {
+        for (IPropertySymbol? current = candidate.OverriddenProperty; current is not null; current = current.OverriddenProperty)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, property)) return true;
+        }
+
+        return false;
+    }
+
+    private static (INamedTypeSymbol? Type, bool Verified) FindBaseCleanup(
+        INamedTypeSymbol target, INamedTypeSymbol requestSymbol)
+    {
+        for (INamedTypeSymbol? current = target.BaseType; current is not null; current = current.BaseType)
+        {
+            IMethodSymbol? method = current.GetMembers("ClearSensitiveProperties").OfType<IMethodSymbol>()
+                .FirstOrDefault(candidate => candidate.IsOverride && candidate.Arity == 0 &&
+                    candidate.Parameters.Length == 0);
+            if (method is not null)
+            {
+                if (method.IsAbstract) return (null, false);
+
+                // Older compiled generators omitted some inherited properties without reporting them.
+                bool verified = method.DeclaringSyntaxReferences.Length != 0 || method.GetAttributes().Any(attribute =>
+                    attribute.AttributeClass?.ToDisplayString() == "System.CodeDom.Compiler.GeneratedCodeAttribute" &&
+                    attribute.ConstructorArguments.Length == 2 &&
+                    attribute.ConstructorArguments[0].Value as string == GeneratorName &&
+                    attribute.ConstructorArguments[1].Value as string == "2");
+                return (current, verified);
+            }
+
+            if (!current.IsAbstract && InheritsFrom(current, requestSymbol) &&
+                current.DeclaringSyntaxReferences.Any(reference => reference.GetSyntax() is ClassDeclarationSyntax declaration &&
+                    declaration.BaseList is not null && declaration.Modifiers.Any(SyntaxKind.PartialKeyword)))
+            {
+                return (current, true);
+            }
+        }
+
+        return (null, false);
     }
 
     private static bool InheritsFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)

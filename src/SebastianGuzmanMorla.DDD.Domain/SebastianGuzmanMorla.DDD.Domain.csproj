@@ -7,7 +7,7 @@
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <PackageOutputPath>$(MSBuildThisFileDirectory)../../artifacts/</PackageOutputPath>
         <PackageId>SebastianGuzmanMorla.DDD.Domain</PackageId>
-        <Version>1.0.6</Version>
+        <Version>2.0.0</Version>
         <Authors>Sebastián Guzmán Morla</Authors>
         <Description>Domain library defining base entities, messages, and attributes for implementing Domain-Driven Design (DDD) in .NET 10.0+.</Description>
         <PackageProjectUrl>https://github.com/sebastianguzmanmorla/DDD</PackageProjectUrl>
@@ -35,7 +35,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="SebastianGuzmanMorla.Validator" Version="1.0.2" />
+        <PackageReference Include="SebastianGuzmanMorla.Validator" Version="2.0.0" />
     </ItemGroup>
 
     <ItemGroup>

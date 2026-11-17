@@ -63,4 +63,4 @@ builder.Services.AddScoped<IIdentityContext, IdentityContextService>();
 
 ## D. Usage inside CQRS Base Handlers
 
-Base `RequestHandler` resolves `IIdentityContext` from DI during lifecycle execution (`OnAfterExecute`), linking every database transaction and `LogRequest` audit row to the calling user and organization automatically.
+Resolve `IIdentityContext` from DI in the application's base handler. Include the caller's identity in each `LogRequest` staged with the audited mutation. See the [mutation audit template](04-application-cqrs.md).

@@ -9,12 +9,12 @@ adding cases; it explains which behavior belongs at each verification layer.
 | --- | --- | ---: |
 | [SebastianGuzmanMorla.DDD.Tests](SebastianGuzmanMorla.DDD.Tests/SebastianGuzmanMorla.DDD.Tests.csproj) | Hashing, pagination, HTTP endpoints, binders, file responses, and authorization policies. | 60 |
 | [SebastianGuzmanMorla.DDD.Domain.Tests](SebastianGuzmanMorla.DDD.Domain.Tests/SebastianGuzmanMorla.DDD.Domain.Tests.csproj) | Consumer domain validation, entities, cloning, and serialization. | 9 |
-| [SebastianGuzmanMorla.DDD.Infrastructure.Tests](SebastianGuzmanMorla.DDD.Infrastructure.Tests/SebastianGuzmanMorla.DDD.Infrastructure.Tests.csproj) | Repositories, caching, UoW, consumer workflows, cancellation, notifications, and exception/audit middleware. | 47 |
+| [SebastianGuzmanMorla.DDD.Infrastructure.Tests](SebastianGuzmanMorla.DDD.Infrastructure.Tests/SebastianGuzmanMorla.DDD.Infrastructure.Tests.csproj) | Repositories, cache visibility, pagination bounds, health endpoints, UoW, consumer workflows, and exception and audit handling. | 71 |
 | [SebastianGuzmanMorla.DDD.Generator.Tests](SebastianGuzmanMorla.DDD.Generator.Tests/SebastianGuzmanMorla.DDD.Generator.Tests.csproj) | Generated registrations and mappings, nested/global namespaces, partial types, and generic notifications/maps. | 8 |
-| [SebastianGuzmanMorla.DDD.Domain.Generator.Tests](SebastianGuzmanMorla.DDD.Domain.Generator.Tests/SebastianGuzmanMorla.DDD.Domain.Generator.Tests.csproj) | Redaction compilation/execution, generic/nested/internal types, duplicate names, and generated base cleanup. | 13 |
+| [SebastianGuzmanMorla.DDD.Domain.Generator.Tests](SebastianGuzmanMorla.DDD.Domain.Generator.Tests/SebastianGuzmanMorla.DDD.Domain.Generator.Tests.csproj) | Generated redaction, diagnostics for inaccessible properties, and base cleanup across assemblies. | 20 |
 | [Consumer.Integration.Tests](Consumer/Consumer.Integration.Tests/Consumer.Integration.Tests.csproj) | Real PostgreSQL and Redis through Testcontainers. | 12 |
 
-Total: **149 cases per framework**, including 12 container cases, on .NET 9 and .NET 10.
+**180 cases per framework**, including 12 container cases, run on .NET 9 and .NET 10.
 The NuGet package smoke test runs separately on both frameworks.
 
 `Shared/` contains fixtures linked as source code by projects that need them;

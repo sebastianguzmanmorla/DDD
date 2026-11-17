@@ -1,58 +1,36 @@
 # 17. Audit Logging Architecture
 
-Every bounded context inherits from a project-specific base `RequestHandler` that overrides execution lifecycle hooks to manage audit trails automatically.
+Use the project-specific base `RequestHandler` to stage mutation audit records in the same transaction as the domain change.
 
 ## A. Database Schema
 Audit records are divided into two entities (persisted to DB):
 - **`LogRequest`**: Captures global request metadata (IP address, user/subject claims, target route, request method, execution timestamp, and serialized JSON request body with sensitive credentials redacted).
-- **`Log`**: Captures granular entity state changes and events logged during request execution (reference entity Type, ID, change Type, and serialized data).
+- **`Log`**: Captures the entity type, ID, operation and message. Add an explicit projection if the audit requires entity data.
 
 ---
 
 ## B. Implementation Pattern
-Base `RequestHandler` manages transactions and maps logs:
+Use [the CQRS mutation template](04-application-cqrs.md) to stage both the redacted `LogRequest` and its `Log` rows through repositories that share the mutation's scoped `DbContext` and `UnitOfWork`. Commit once, and set the response's `LogId` after the commit. If staging, saving, or cancellation fails before commit, roll back with `CancellationToken.None` and propagate the error.
 
 ```csharp
-protected override async Task OnAfterExecute(TRequest request, TResponse response, CancellationToken cancellationToken = default)
+await UnitOfWork.CreateTransaction(cancellationToken);
+try
 {
-    bool logIgnore = request.GetType().GetCustomAttributes(typeof(LogIgnoreAttribute), true).Length != 0;
-    bool logError = _logs.Any(x => x.Type == LogType.Error);
-
-    // Skip logging for query operations marked with [LogIgnore] unless an error occurred
-    if (!logError && (_logs.Count == 0 || logIgnore)) return;
-
-    await using (UnitOfWork)
-    {
-        try
-        {
-            await UnitOfWork.CreateTransaction(cancellationToken);
-
-            LogRequest logRequest = request.ToLogEntity(IdentityContext, _jsonSerializerOptions, LogRequestId);
-            await _logRequestRepository.Add(cancellationToken, logRequest);
-
-            List<Log> logEntries = _logs
-                .Select(x => x.ToLogEntity(_jsonSerializerOptions, logRequest.Id))
-                .ToList();
-
-            await _logRepository.Add(cancellationToken, logEntries);
-            await UnitOfWork.Commit(cancellationToken);
-            response.LogId = logRequest.Id;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            await UnitOfWork.Rollback(CancellationToken.None);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            AddLog(LogType.Error, ex.ToString());
-            await UnitOfWork.Rollback(CancellationToken.None);
-        }
-    }
+    await repository.Update(cancellationToken, entity);
+    Guid logId = await StageMutationAudit(request, entity, LogType.Put, "Updated entity", cancellationToken);
+    await UnitOfWork.Commit(cancellationToken);
+    return new Response { LogId = logId };
+}
+catch
+{
+    await UnitOfWork.Rollback(CancellationToken.None);
+    throw;
 }
 ```
 
-* **RULE**: Mark query requests (which read data and do not modify state) with `[LogIgnore]` to avoid flooding the database with audit rows.
+Record failed attempts separately through the application's operational logging policy. Use `OnAfterExecute` only for work that can happen independently of the mutation. For an external audit destination, stage an outbox row in the mutation transaction and deliver it asynchronously.
+
+Mark read-only requests with `[LogIgnore]` when the application's separate query logging honors that attribute.
 
 ---
 

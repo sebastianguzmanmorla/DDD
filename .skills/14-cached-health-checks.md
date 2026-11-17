@@ -10,7 +10,7 @@ To optimize performance and protect critical database systems from high-frequenc
 ```csharp
 using Microsoft.Extensions.Options;
 using SebastianGuzmanMorla.DDD.Infrastructure.Services;
-using SebastianGuzmanMorla.DDD.Infrastructure.Options;
+using SebastianGuzmanMorla.DDD.Domain.Options;
 
 builder.Services.AddOptions<CachedHealthCheckOptions>()
     .Configure<IOptions<HealthCheckSettings>>((options, settings) =>
@@ -29,15 +29,19 @@ builder.Services.AddHostedService(serviceProvider =>
 
 ## B. Endpoint Mapping (`Program.cs`)
 
-Expose endpoint in `Program.cs` before middlewares:
+Map a status-only readiness endpoint in `Program.cs`. Assign unique Redis report and lock keys for each application and environment that shares a Redis database.
 
 ```csharp
 using SebastianGuzmanMorla.DDD.Infrastructure.Extensions;
 
 app.MapCachedHealthChecks("/health");
+// Optional, with a named policy that grants access to operators.
+app.MapDetailedCachedHealthChecks("HealthDiagnostics", "/health/details");
 ```
 
 ### HTTP Status Code Mapping
 * `"Healthy"` -> `200 OK`
 * `"Degraded"` -> `429 TooManyRequests`
-* `"Unhealthy"` / Other -> `503 ServiceUnavailable`
+* `"Unhealthy"` or `"Unavailable"` -> `503 ServiceUnavailable`
+
+A missing, invalid, or unavailable Redis report returns `"Unavailable"`. Both routes read the cache without running probes. The detailed route requires an authenticated operator, a named policy and a non-default Redis report key.

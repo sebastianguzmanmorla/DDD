@@ -75,9 +75,14 @@ public static partial class ConfigureServices
 - Redaction supports internal, generic, and nested partial request classes and
   duplicate simple names in different namespaces. Containing types of a nested
   request must also be partial. Accessible inherited sensitive properties are
-  cleared, and existing/generated base cleanup is invoked. A manual override
-  remains responsible for its own redaction. Use writable sensitive properties;
+  cleared, and existing/generated base cleanup is invoked. Build error `DDD001`
+  identifies marked properties that generated cleanup cannot assign. Provide a
+  cleanup override where the property is writable. A manual override remains
+  responsible for its own redaction. Use writable sensitive properties;
   do not assume recursive redaction of nested objects.
+  If cleanup comes from an older compiled base assembly, rebuild that base
+  with the current generator or explicitly override cleanup after checking
+  that the base implementation clears the inherited values.
 - EF mapping generation skips abstract and open generic templates and applies
   concrete configurations, including those inheriting from generic maps.
 - Verify both compilation and behavior: execute redaction, resolve generated DI
